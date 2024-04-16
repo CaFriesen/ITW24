@@ -7,7 +7,9 @@
 #define CHIPSET  WS2811
 
 CRGB leds[NUM_LEDS*3] = {0};
-CRGB* led_head;
+
+CLEDController* led_controller; 
+
 
 enum STATE {IDLE, GAME_START, POPPING_MOLES, ADD_SCORE, LOSING_HEALTH};
 STATE state;
@@ -22,12 +24,18 @@ int animation_array_construction(CRGB *led_array){
 
 int idle()
 {
-	for(int i = 0; i < NUM_LEDS; i++){
-		led_head = led_head + i;
+  
+  CRGB* led_head = &leds[NUM_LEDS];;
+	long long led_timer = micros();
+
+  for(int i = 0; i < NUM_LEDS; i++){
+    
+    led_head += 1;
+    led_controller->setLeds(led_head, NUM_LEDS);
     FastLED.show();
-		delay(10);
+    Serial.println(micros() - led_timer);
+    led_timer = micros();
 	}
-  while(true);
   return 0;
 	//mooie idle animatie die checkt op activiteit
 }
@@ -56,45 +64,46 @@ void setup() {
   Serial.begin(9600);
   Serial.println("We started");
   state = IDLE;
+  FastLED.setBrightness(100);
   animation_array_construction(leds);
-  led_head = &leds[NUM_LEDS];
-  FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(led_head, NUM_LEDS);
+  led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
 }
 
 void loop() {
   switch (state)
   {
-  case IDLE:
+    case IDLE:
+      
+      Serial.println("Head in");
+      idle();
+      Serial.println("Exit");
+      break;
     
-    idle();
+    case GAME_START:
+      
+      gameStart();
 
-    break;
-  
-  case GAME_START:
+      break;
     
-    gameStart();
+    case POPPING_MOLES:
+      
+      popingMoles();
 
-    break;
-  
-  case POPPING_MOLES:
+      break;
     
-    popingMoles();
+    case ADD_SCORE:
+      
+      addScore();
 
-    break;
-  
-  case ADD_SCORE:
+      break;
     
-    addScore();
+    case LOSING_HEALTH:
+      
+      losingHealth();
 
-    break;
-  
-  case LOSING_HEALTH:
+      break;
     
-    losingHealth();
-
-    break;
-  
-  default:
-    break;
-  }
+    default:
+      break;
+    }
 }
