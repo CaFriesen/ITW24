@@ -1,15 +1,22 @@
 #include <Arduino.h>
 #include <FastLED.h>
+#include <ADS1X15.h>
 
 #define NUM_LEDS 180
 #define DATA_PIN 16
 #define COLOR_ORDER GRB
 #define CHIPSET  WS2811
 
+#define SDA_1 21
+#define SCL_1 22
+
+ADS1115 Sensor = ADS1115(0x48);
+
+int sensor_value;
+
 CRGB leds[NUM_LEDS*3] = {0};
 
 CLEDController* led_controller; 
-
 
 enum STATE {IDLE, GAME_START, POPPING_MOLES, ADD_SCORE, LOSING_HEALTH};
 STATE state;
@@ -38,6 +45,25 @@ int idle()
 	}
   return 0;
 	//mooie idle animatie die checkt op activiteit
+}
+
+int idle2()
+{
+  CRGB* led_head;
+  if (sensor_value > 100)
+  {
+    led_head = &leds[NUM_LEDS];
+  } 
+  else
+  {
+    led_head = &leds[0];
+  }
+  
+  led_controller->setLeds(led_head, NUM_LEDS);
+  FastLED.show();
+  delay(100);
+
+  return 0;
 }
 
 int gameStart()
@@ -70,13 +96,14 @@ void setup() {
 }
 
 void loop() {
+
+  sensor_value = abs(Sensor.readADC_Differential_0_1());
+  Serial.println(sensor_value);
+
   switch (state)
   {
     case IDLE:
-      
-      Serial.println("Head in");
-      idle();
-      Serial.println("Exit");
+      idle2();
       break;
     
     case GAME_START:
