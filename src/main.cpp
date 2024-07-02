@@ -6,9 +6,10 @@
 #define DATA_PIN 16
 #define COLOR_ORDER GRB
 #define CHIPSET  WS2811
-#define COOLDOWN_TIME_MOLE 1000
-#define MAX_COMETS 50
-#define COMET_SIZE 40
+#define COOLDOWN_TIME_MOLE 10
+#define MAX_COMETS 2
+#define LED_SKIPS 2
+#define COMET_SIZE 20
 #define SENSOR_THRESHOLD 400
 
 #define SDA_1 21
@@ -27,7 +28,8 @@ int first_time;
 
 
 CRGB leds[NUM_LEDS*3] = {0};
-CHSV HSV_leds[NUM_LEDS*3];
+CHSV HSV_leds[NUM_LEDS*3] = {CHSV(0,0,0)};
+int hue_comet[NUM_LEDS*3] = {0};
 
 CLEDController* led_controller; 
 
@@ -68,8 +70,9 @@ int idle()
 
 // Reads the sensor value and compares it to a threshold value. When the threshold has been surpassed and the cooldown timer is not active the a cooldown timer will be set to the defined COOLDOWN_TIME. When the cooldown timer is active the function returns true00
 int readIfMoleHit(int threshold){
+  long time_begin = millis();
   int ADC_value = abs(Sensor.readADC_Differential_0_1());
-  Serial.println(ADC_value);
+  // Serial.println(ADC_value);
   if (ADC_value > threshold && cooldown_timer_mole < millis())
   {
     cooldown_timer_mole = millis() + COOLDOWN_TIME_MOLE;
@@ -77,8 +80,10 @@ int readIfMoleHit(int threshold){
 
   if (cooldown_timer_mole > millis())
   {
+  // Serial.println(millis()-time_begin);
     return true;
   }
+  // Serial.println(millis()-time_begin);
   return false;
 }
 
@@ -111,13 +116,15 @@ void basicInteraction()
 {
   if(readIfMoleHit(SENSOR_THRESHOLD) && first_time)
   {
-    HSV_leds[0] = CHSV(random(256),0,200);
-    leds[0] = CRGB::White;
+    hue_comet[0] = random(256);
     first_time = false;
-  }
+  }  
   else
   {
-    first_time = true;
+    if (!readIfMoleHit(SENSOR_THRESHOLD))
+    {
+      first_time = true;
+    }   
   }
 }
 
@@ -128,41 +135,58 @@ void updateLedstrip()
   switch (state)
   {
   case BASIC_INTERACTION:
-    for (int32_t i = 0; i < NUM_LEDS; i++)
-    {
-      if (leds[i] == CRGB::White)
-      {
-        leds[i+1] == CRGB::White;
+  {
+    uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
 
-        CHSV main_hsv = HSV_leds[i];
-        HSV_leds[i+1] = main_hsv;
-        for (int32_t j = i; (j > i - COMET_SIZE) && (j >= 0); j--)
+    for (int32_t i = virtual_beam_size; i >= 0; i--)
+    {
+      if (hue_comet[i] != 0)
+      {
+        int current_hue_comet = hue_comet[i];
+        hue_comet[i+LED_SKIPS] = current_hue_comet;
+        hue_comet[i] = 0;
+
+        for (int j = i; (j > i - COMET_SIZE) && (j >= 0); j--)
         {
-          leds[j] = CHSV(main_hsv.hue, min(main_hsv.saturation + (uint8_t)random(50),255), max(main_hsv.value - (uint8_t)random(40), 0));
+          leds[j] = CHSV(current_hue_comet, min(255 - (int)random(50),255), max(200 - (int)random(40), 0));
         }
+
+        if(i - COMET_SIZE >= 0)
+        {
+          for (int j = 0; j < LED_SKIPS; j++)
+          {
+            leds[i-COMET_SIZE-j] = CRGB::Black;
+          }
+          
+        }
+        
+        
       }
     }
     
-    break;
-  
+  }
+  break;
+
   default:
     // normal whac a mole operation
     break;
   }
-
   led_controller->setLeds(led_head, NUM_LEDS);
+  FastLED.show();
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("We started");
   state = BASIC_INTERACTION;
-  FastLED.setBrightness(100);
+  FastLED.setBrightness(5);
+  setCpuFrequencyMhz(240);
   animation_array_construction(leds);
   led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   if(!Sensor.begin()){
     Serial.println("Ja dat werkt niet; Sensor Fault can't connect");
   }
+  Sensor.setDataRate(7);
 
   popTime = 0;
   first_time = true;
@@ -203,5 +227,6 @@ void loop() {
     default:
       break;
     }
+    
   updateLedstrip();
 }
