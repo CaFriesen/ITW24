@@ -2,13 +2,17 @@
 #include <FastLED.h>
 #include <ADS1X15.h>
 
-#define NUM_LEDS 180
-#define DATA_PIN 16
+#define NUM_LEDS_STRIP 180
+#define NUM_LEDS 540
+#define DATA_PIN 33
+#define DATA_PIN_2 32
+#define DATA_PIN_3 25
 #define COLOR_ORDER GRB
-#define CHIPSET  WS2811
+#define CHIPSET  WS2812B
+
 #define COOLDOWN_TIME_MOLE 10
 #define MAX_COMETS 2
-#define LED_SKIPS 2
+#define LED_SKIPS 3
 #define COMET_SIZE 20
 #define SENSOR_THRESHOLD 400
 
@@ -30,11 +34,21 @@ int first_time;
 CRGB leds[NUM_LEDS*3] = {0};
 CHSV HSV_leds[NUM_LEDS*3] = {CHSV(0,0,0)};
 int hue_comet[NUM_LEDS*3] = {0};
+int value_comet[COMET_SIZE] = {0};
 
 CLEDController* led_controller; 
 
 enum STATE {IDLE, GAME_START, POPPING_MOLES, ADD_SCORE, BASIC_INTERACTION};
 STATE state;
+
+int value_array_construction()
+{
+  for (int i = 0; i < COMET_SIZE; i++)
+  {
+    value_comet[i] = COMET_SIZE - map(i, COMET_SIZE, 0, 255, 0);
+  }
+  
+}
 
 int animation_array_construction(CRGB *led_array){
 	
@@ -72,7 +86,7 @@ int idle()
 int readIfMoleHit(int threshold){
   long time_begin = millis();
   int ADC_value = abs(Sensor.readADC_Differential_0_1());
-  // Serial.println(ADC_value);
+  Serial.println(ADC_value);
   if (ADC_value > threshold && cooldown_timer_mole < millis())
   {
     cooldown_timer_mole = millis() + COOLDOWN_TIME_MOLE;
@@ -148,7 +162,7 @@ void updateLedstrip()
 
         for (int j = i; (j > i - COMET_SIZE) && (j >= 0); j--)
         {
-          leds[j] = CHSV(current_hue_comet, min(255 - (int)random(50),255), max(200 - (int)random(40), 0));
+          leds[j] = CHSV(current_hue_comet, min(COMET_SIZE-((i-j)*12)-(int)random(50),50), max(200 - (int)random(40), 0));
         }
 
         if(i - COMET_SIZE >= 0)
@@ -156,11 +170,8 @@ void updateLedstrip()
           for (int j = 0; j < LED_SKIPS; j++)
           {
             leds[i-COMET_SIZE-j] = CRGB::Black;
-          }
-          
-        }
-        
-        
+          }          
+        }        
       }
     }
     
@@ -179,10 +190,14 @@ void setup() {
   Serial.begin(115200);
   Serial.println("We started");
   state = BASIC_INTERACTION;
-  FastLED.setBrightness(5);
+  FastLED.setBrightness(100);
   setCpuFrequencyMhz(240);
   animation_array_construction(leds);
-  led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
+  // value_array_construction();
+  // led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
+  led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, 0, NUM_LEDS_STRIP).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<CHIPSET, DATA_PIN_2, COLOR_ORDER>(leds, 180, NUM_LEDS_STRIP).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<CHIPSET, DATA_PIN_3, COLOR_ORDER>(leds, 360, NUM_LEDS_STRIP).setCorrection(TypicalLEDStrip);
   if(!Sensor.begin()){
     Serial.println("Ja dat werkt niet; Sensor Fault can't connect");
   }
