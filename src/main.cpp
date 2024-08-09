@@ -128,18 +128,7 @@ int addScore()
 
 void basicInteraction()
 {
-  if(readIfMoleHit(SENSOR_THRESHOLD) && first_time)
-  {
-    hue_comet[0] = random(256);
-    first_time = false;
-  }  
-  else
-  {
-    if (!readIfMoleHit(SENSOR_THRESHOLD))
-    {
-      first_time = true;
-    }   
-  }
+  Serial.println(analogRead(13));
 }
 
 void updateLedstrip()
