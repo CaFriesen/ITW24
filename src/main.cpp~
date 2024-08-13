@@ -1,8 +1,10 @@
 #include <Arduino.h>
 
+enum STATE {IDLE, GAME_START, POPPING_MOLES, ADD_SCORE, LOSING_HEALTH};
+STATE state;
+
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+  state = IDLE;
 }
 
 void loop() {
@@ -32,7 +34,7 @@ void loop() {
 
     break;
   
-  case LOSINGHEALTH:
+  case LOSING_HEALTH:
     
     losingHealth();
 
