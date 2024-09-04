@@ -26,14 +26,18 @@ int sensor_values[NUM_SENSORS]; // Values
 #define LED_SKIPS 3  // ?
 #define COMET_SIZE 20
 #define SENSOR_THRESHOLD 400
-#define SIMON_PATTERN_LENGTH 200
-uint8_t simon_says[SIMON_PATTERN_LENGTH];
+#define MAX_PATTERN_LENGTH 200
+uint8_t simon_says[MAX_PATTERN_LENGTH];
 uint8_t simon_increment = 0;
 uint8_t simon_pattern_length = 0;
 
 // Timer to reset to idle
 unsigned long reset_timer = 0;
 unsigned long reset_delay = 10000; // 10 sec
+
+// Timer to show simon says pattern
+unsigned long show_timer = 0;
+unsigned long show_delay = 1000; // 10 sec
 
 int moleActive;
 int notPopped;
@@ -55,6 +59,7 @@ enum STATE
     ACTIVE,
     GAME_START,
     GAME_OVER,
+    GAME_UPDATE,
     BASIC_INTERACTION
 };
 STATE state;
@@ -98,53 +103,87 @@ int idleAnimation()
     // mooie idle animatie die checkt op activiteit
 }
 
-int getInputData(int sensor_num)
+void showSimonSays()
 {
-    // Pin HIGH so data comes in, start reading all pins
-}
-
-// Reads the sensor value and compares it to a threshold value. When the threshold has been surpassed and the cooldown timer is not active the a cooldown timer will be set to the defined COOLDOWN_TIME. When the cooldown timer is active the function returns true00
-int readIfMoleHit(int threshold)
-{
-    // Check all sensors
-    for (int i = 0; i < NUM_SENSORS; i++)
+    if (show_delay < millis() - show_timer)
     {
-        // If data comes in
-        if (getInputData(sensors[i]) > 0)
+        // Reset timer
+        show_timer = millis();
+        // Turn LED on position "simon_increment"
+        // Possibly LED beam + ring??
+
+        // Increment counter
+        simon_increment++;
+        // If entire pattern is shown
+        if (simon_increment == simon_pattern_length)
         {
-            // If game is not being played
-            if (state == IDLE)
-            {
-                // Start game
-                state = GAME_START;
-                return 0;
-            }
-            // If game is being played
-            else if (state == ACTIVE)
-            {
-                // If correct mole is hit
-                if (correctMoleHit(i))
-                {
-                    // Nieuwe led aanzetten
-                }
-                else
-                {
-                    state = GAME_OVER;
-                }
-            }
-            // Return what mole is hit
-            return i;
+            // Become active
+            state = ACTIVE;
         }
     }
 }
 
-boolean correctMoleHit(int sensor)
+void updateSimonSays()
 {
-    if (sensor == simon_says[simon_increment])
+    // New random value for the array
+    simon_says[simon_pattern_length] = random(0, NUM_SENSORS);
+    // Update length
+    simon_pattern_length++;
+}
+
+void resetSimonSays()
+{
+    for (int i = 0; i < MAX_PATTERN_LENGTH; i++)
     {
-        return true;
+        simon_says[i] = 0;
     }
-    return false;
+    simon_pattern_length = 0;
+}
+
+int getInputData()
+{
+    // Read all data, return integer of sensor that was triggered first
+
+    // Start game if data is coming in while in idle
+    if (state == IDLE)
+    {
+        // Update pattern
+        updateSimonSays();
+        // Start game
+        state = GAME_START;
+    }
+}
+
+// Compare actual drum hit to expected drum hit for simon says mechanics
+void checkCorrectHit()
+{
+    // If correct mole is hit
+    if (getInputData() == simon_says[simon_increment])
+    {
+        // Start LED ring and strip animation for correct hit
+
+        // Increment through simon says array
+        simon_increment++;
+        // If end is reached (current pattern is replicated)
+        if (simon_increment == simon_pattern_length)
+        {
+            // Update simon says pattern length
+            updateSimonSays();
+            // Reset counter
+            simon_increment = 0;
+            // Show new pattern
+            state = GAME_UPDATE;
+        }
+    }
+    else
+    {
+        // Reset simon says
+        resetSimonSays();
+        // Reset counter
+        simon_increment = 0;
+        // End game
+        state = GAME_OVER;
+    }
 }
 
 boolean timeIsUp()
@@ -163,34 +202,21 @@ int gameStart()
     return 0;
 }
 
-int popingMoles()
-{
-    if (readIfMoleHit(SENSOR_THRESHOLD) && notPopped)
-    {
-        moleActive = false;
-        notPopped = false;
-        popTime = millis() - popUpTimeStamp;
-    }
-    return 0;
-
-    // hoofdstate van het spel, mollen komen omhoog en wachten om gesmackt te worden.
-}
-
-void basicInteraction()
-{
-    if (readIfMoleHit(SENSOR_THRESHOLD) && first_time)
-    {
-        hue_comet[0] = random(256);
-        first_time = false;
-    }
-    else
-    {
-        if (!readIfMoleHit(SENSOR_THRESHOLD))
-        {
-            first_time = true;
-        }
-    }
-}
+// void basicInteraction() // vervangen / weghalen
+// {
+//     if (readIfMoleHit(SENSOR_THRESHOLD) && first_time)
+//     {
+//         hue_comet[0] = random(256);
+//         first_time = false;
+//     }
+//     else
+//     {
+//         if (!readIfMoleHit(SENSOR_THRESHOLD))
+//         {
+//             first_time = true;
+//         }
+//     }
+// }
 
 void updateLedstrip()
 {
@@ -259,22 +285,31 @@ void loop()
     switch (state)
     {
     case IDLE:
-        readIfMoleHit(SENSOR_THRESHOLD);
+        getInputData();
         idleAnimation();
         break;
 
-    case ACTIVE:
-        readIfMoleHit(SENSOR_THRESHOLD);
+    case GAME_START:
+        // Some start animation > go to active
+        break;
 
+    case ACTIVE:
+        checkCorrectHit();
         if (timeIsUp())
         {
             state = GAME_OVER;
         }
         break;
 
-    case BASIC_INTERACTION:
+    case GAME_UPDATE:
+        // Don't read inputs here
+        showSimonSays();
+        break;
+    case GAME_OVER:
+        // Show game over animation > go to idle
+        break;
 
-        basicInteraction();
+    case BASIC_INTERACTION:
 
         break;
 
