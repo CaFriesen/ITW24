@@ -33,11 +33,11 @@ uint8_t simon_pattern_length = 0;
 
 // Timer to reset to idle
 unsigned long reset_timer = 0;
-unsigned long reset_delay = 10000; // 10 sec
+unsigned long reset_delay = 30000; // 30 sec
 
 // Timer to show simon says pattern
 unsigned long show_timer = 0;
-unsigned long show_delay = 1000; // 10 sec
+unsigned long show_delay = 3000; // 3 sec
 
 int moleActive;
 int notPopped;
@@ -59,7 +59,7 @@ enum STATE
     ACTIVE,
     GAME_START,
     GAME_OVER,
-    GAME_UPDATE,
+    PATTERN_SHOW,
     BASIC_INTERACTION
 };
 STATE state;
@@ -113,10 +113,14 @@ void showSimonSays()
         // Possibly LED beam + ring??
 
         // Increment counter
+        Serial.printf("%d ", simon_says[simon_increment]);
         simon_increment++;
         // If entire pattern is shown
-        if (simon_increment == simon_pattern_length)
+        if (simon_increment >= simon_pattern_length)
         {
+            Serial.printf(", length: %d\n", simon_pattern_length);
+            // Reset counter
+            simon_increment = 0;
             // Become active
             state = ACTIVE;
         }
@@ -133,56 +137,61 @@ void updateSimonSays()
 
 void resetSimonSays()
 {
+    // Reset values
     for (int i = 0; i < MAX_PATTERN_LENGTH; i++)
     {
         simon_says[i] = 0;
     }
+    Serial.println("Pattern reset");
+    // Reset length
     simon_pattern_length = 0;
 }
 
 int getInputData()
 {
-    // Read all data, return integer of sensor that was triggered first
-
-    // Start game if data is coming in while in idle
-    if (state == IDLE)
-    {
-        // Update pattern
-        updateSimonSays();
-        // Start game
-        state = GAME_START;
-    }
+    return 99;
 }
 
 // Compare actual drum hit to expected drum hit for simon says mechanics
 void checkCorrectHit()
 {
+    // Get data
+    int current_value = getInputData();
+
     // If correct mole is hit
-    if (getInputData() == simon_says[simon_increment])
+    if (current_value == simon_says[simon_increment])
     {
-        // Start LED ring and strip animation for correct hit
+        Serial.printf("Sensor %d hit, correct\n", current_value);
+        // TODO: Start LED ring and strip animation for correct hit
 
         // Increment through simon says array
         simon_increment++;
         // If end is reached (current pattern is replicated)
-        if (simon_increment == simon_pattern_length)
+        if (simon_increment >= simon_pattern_length)
         {
-            // Update simon says pattern length
+            Serial.printf("Complete, updated pattern: ");
+            // Update simon says pattern
             updateSimonSays();
             // Reset counter
             simon_increment = 0;
             // Show new pattern
-            state = GAME_UPDATE;
+            state = PATTERN_SHOW;
         }
     }
-    else
+    else if (current_value != 99)
     {
+        Serial.printf("Sensor %d hit, incorrect\n", current_value);
+        // TODO: Communicate to the rest of the system that game is over
+
         // Reset simon says
         resetSimonSays();
         // Reset counter
         simon_increment = 0;
         // End game
         state = GAME_OVER;
+    }
+    else
+    {
     }
 }
 
@@ -264,8 +273,8 @@ void updateLedstrip()
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("We started");
-    state = BASIC_INTERACTION;
+    Serial.println("SYSTEM BOOTED");
+    state = IDLE;
     FastLED.setBrightness(100);
     setCpuFrequencyMhz(240);
     animation_array_construction(leds);
@@ -285,8 +294,15 @@ void loop()
     switch (state)
     {
     case IDLE:
-        getInputData();
-        idleAnimation();
+        if (getInputData() != 99)
+        {
+            Serial.println("GAME START");
+            // Update pattern
+            updateSimonSays();
+            // Start game
+            Serial.print("Pattern: ");
+            state = PATTERN_SHOW;
+        }
         break;
 
     case GAME_START:
@@ -295,24 +311,21 @@ void loop()
 
     case ACTIVE:
         checkCorrectHit();
-        if (timeIsUp())
-        {
-            state = GAME_OVER;
-        }
+        //      if (timeIsUp())
+        //      {
+        //        state = GAME_OVER;
+        //      }
         break;
 
-    case GAME_UPDATE:
+    case PATTERN_SHOW:
         // Don't read inputs here
         showSimonSays();
         break;
     case GAME_OVER:
         // Show game over animation > go to idle
+        Serial.println("GAME OVER");
+        state = IDLE;
         break;
-
-    case BASIC_INTERACTION:
-
-        break;
-
     default:
         break;
     }
