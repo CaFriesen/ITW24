@@ -1,23 +1,28 @@
 #include <Arduino.h>
 #include <FastLED.h>
 
+#define SWITCH_PIN 5 // TODO: Choose switch pin
+
 // LED beam config
 #define NUM_LEDS_STRIP_3M 180
 #define NUM_LEDS_STRIP_5M 300
 #define NUM_STRIPS 4
 #define NUM_LEDS 960
+#define NUM_BEAMS 5
+uint8_t beams[NUM_BEAMS];
+
 #define DATA_PIN 33
 #define DATA_PIN_2 32
 #define DATA_PIN_3 25
 #define DATA_PIN_4
-#define DATA_PIN_5
+
 #define COLOR_ORDER GRB
 #define CHIPSET WS2812B
 
-// Inputs and outputs
-#define NUM_BEAMS 5
+// LED ring config
+
+// Sensor config
 #define NUM_SENSORS 5
-uint8_t beams[NUM_BEAMS];
 uint8_t sensors[NUM_SENSORS];   // Sensors
 int sensor_values[NUM_SENSORS]; // Values
 
@@ -26,6 +31,8 @@ int sensor_values[NUM_SENSORS]; // Values
 #define LED_SKIPS 3  // ?
 #define COMET_SIZE 20
 #define SENSOR_THRESHOLD 400
+
+// Simon says config
 #define MAX_PATTERN_LENGTH 200
 uint8_t simon_says[MAX_PATTERN_LENGTH];
 uint8_t simon_increment = 0;
@@ -39,6 +46,7 @@ unsigned long reset_delay = 30000; // 30 sec
 unsigned long show_timer = 0;
 unsigned long show_delay = 3000; // 3 sec
 
+// Outdated?
 int moleActive;
 int notPopped;
 long long popUpTimeStamp;
@@ -46,12 +54,20 @@ long long popTime;
 long long cooldown_timer_mole;
 int first_time;
 
+// Helemaal crazy
 CRGB leds[NUM_LEDS * 3] = {0};
 CHSV HSV_leds[NUM_LEDS * 3] = {CHSV(0, 0, 0)};
 int hue_comet[NUM_LEDS * 3] = {0};
 int value_comet[COMET_SIZE] = {0};
 
 CLEDController *led_controller;
+
+enum ROLE
+{
+    MASTER,
+    SLAVE
+};
+ROLE role;
 
 enum STATE
 {
@@ -109,8 +125,7 @@ void showSimonSays()
     {
         // Reset timer
         show_timer = millis();
-        // Turn LED on position "simon_increment"
-        // Possibly LED beam + ring??
+        // TODO: Communicate with other systems to turn LED ring (& beam?) on in the correct system
 
         // Increment counter
         Serial.printf("%d ", simon_says[simon_increment]);
@@ -162,7 +177,10 @@ void checkCorrectHit()
     if (current_value == simon_says[simon_increment])
     {
         Serial.printf("Sensor %d hit, correct\n", current_value);
-        // TODO: Start LED ring and strip animation for correct hit
+        // TODO: LED ring animation
+
+        // LED beam animation
+        hue_comet[0] = random(256);
 
         // Increment through simon says array
         simon_increment++;
@@ -231,52 +249,60 @@ void updateLedstrip()
 {
     CRGB *led_head = &leds[0];
 
-    switch (state)
-    {
-    case BASIC_INTERACTION:
-    {
-        uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
+    uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
 
-        for (int32_t i = virtual_beam_size; i >= 0; i--)
+    for (int32_t i = virtual_beam_size; i >= 0; i--)
+    {
+        if (hue_comet[i] != 0)
         {
-            if (hue_comet[i] != 0)
+            int current_hue_comet = hue_comet[i];
+            hue_comet[i + LED_SKIPS] = current_hue_comet;
+            hue_comet[i] = 0;
+
+            for (int j = i; (j > i - COMET_SIZE) && (j >= 0); j--)
             {
-                int current_hue_comet = hue_comet[i];
-                hue_comet[i + LED_SKIPS] = current_hue_comet;
-                hue_comet[i] = 0;
+                leds[j] = CHSV(current_hue_comet, min(COMET_SIZE - ((i - j) * 12) - (int)random(50), 50), max(200 - (int)random(40), 0));
+            }
 
-                for (int j = i; (j > i - COMET_SIZE) && (j >= 0); j--)
+            if (i - COMET_SIZE >= 0)
+            {
+                for (int j = 0; j < LED_SKIPS; j++)
                 {
-                    leds[j] = CHSV(current_hue_comet, min(COMET_SIZE - ((i - j) * 12) - (int)random(50), 50), max(200 - (int)random(40), 0));
-                }
-
-                if (i - COMET_SIZE >= 0)
-                {
-                    for (int j = 0; j < LED_SKIPS; j++)
-                    {
-                        leds[i - COMET_SIZE - j] = CRGB::Black;
-                    }
+                    leds[i - COMET_SIZE - j] = CRGB::Black;
                 }
             }
         }
-    }
-    break;
-
-    default:
-        // normal whac a mole operation
-        break;
     }
     led_controller->setLeds(led_head, NUM_LEDS);
     FastLED.show();
 }
 
+void updateLedring()
+{
+}
+
+void roleSwitch()
+{
+    // Switch microcontroller role
+    if (digitalRead(SWITCH_PIN) <= 100)
+    {
+        role = MASTER;
+    }
+    else
+    {
+        role = SLAVE;
+    }
+}
+
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("SYSTEM BOOTED");
-    state = IDLE;
-    FastLED.setBrightness(100);
     setCpuFrequencyMhz(240);
+    Serial.println("SYSTEM BOOTED");
+    roleSwitch();
+    state = IDLE;
+
+    FastLED.setBrightness(100);
     animation_array_construction(leds);
     // value_array_construction();
     // led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
@@ -290,45 +316,59 @@ void setup()
 
 void loop()
 {
-
-    switch (state)
+    switch (role)
     {
-    case IDLE:
-        if (getInputData() != 99)
+    case MASTER:
+
+        // Master behavior
+        switch (state)
         {
-            Serial.println("GAME START");
-            // Update pattern
-            updateSimonSays();
-            // Start game
-            Serial.print("Pattern: ");
-            state = PATTERN_SHOW;
+        case IDLE:
+            if (getInputData() != 99)
+            {
+                Serial.println("GAME START");
+                // Update pattern
+                updateSimonSays();
+                // Start game
+                Serial.print("Pattern: ");
+                state = PATTERN_SHOW;
+            }
+            break;
+
+        case GAME_START:
+            // Some start animation > go to active
+            break;
+
+        case ACTIVE:
+            checkCorrectHit();
+            if (timeIsUp())
+            {
+                state = GAME_OVER;
+            }
+            break;
+
+        case PATTERN_SHOW:
+            // Don't read inputs here
+            showSimonSays();
+            break;
+
+        case GAME_OVER:
+            // Show game over animation > go to idle
+            Serial.println("GAME OVER");
+            state = IDLE;
+            break;
+
+        default:
+            break;
         }
         break;
 
-    case GAME_START:
-        // Some start animation > go to active
-        break;
+    case SLAVE:
 
-    case ACTIVE:
-        checkCorrectHit();
-        //      if (timeIsUp())
-        //      {
-        //        state = GAME_OVER;
-        //      }
-        break;
-
-    case PATTERN_SHOW:
-        // Don't read inputs here
-        showSimonSays();
-        break;
-    case GAME_OVER:
-        // Show game over animation > go to idle
-        Serial.println("GAME OVER");
-        state = IDLE;
-        break;
-    default:
+        // Slave behavior
         break;
     }
 
     updateLedstrip();
+    updateLedring();
 }
