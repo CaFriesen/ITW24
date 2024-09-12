@@ -1,7 +1,15 @@
 #include <Arduino.h>
 #include <FastLED.h>
+#include <Adafruit_NeoPixel.h>
+#include <Wire.h>
 
 #define SWITCH_PIN 5 // TODO: Choose switch pin
+
+// Game variables
+#define MAX_COMETS 2 // ?
+#define LED_SKIPS 3  // ?
+#define COMET_SIZE 20
+#define SENSOR_THRESHOLD 400
 
 // LED beam config
 #define NUM_LEDS_STRIP_3M 180
@@ -19,18 +27,19 @@ uint8_t beams[NUM_BEAMS];
 #define COLOR_ORDER GRB
 #define CHIPSET WS2812B
 
+CRGB *led_head = &leds[0];
+uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
+
 // LED ring config
+#define LED_RING_DATA_PIN 26
+#define NUM_LED_RING_PIXELS 60
+Adafruit_NeoPixel led_ring(NUM_LED_RING_PIXELS, LED_RING_DATA_PIN, NEO_GRB + NEO_KHZ800);
 
 // Sensor config
 #define NUM_SENSORS 5
+#define ANALOG_SENSOR_INPUT_PIN 27
 uint8_t sensors[NUM_SENSORS];   // Sensors
 int sensor_values[NUM_SENSORS]; // Values
-
-// Game variables
-#define MAX_COMETS 2 // ?
-#define LED_SKIPS 3  // ?
-#define COMET_SIZE 20
-#define SENSOR_THRESHOLD 400
 
 // Simon says config
 #define MAX_PATTERN_LENGTH 200
@@ -46,13 +55,15 @@ unsigned long reset_delay = 30000; // 30 sec
 unsigned long show_timer = 0;
 unsigned long show_delay = 3000; // 3 sec
 
+// Timer gameStart
+#define TOTAL_GAME_START_ANIMATION_TIME_MS 3000
+unsigned long game_start_timer;
+
 // Outdated?
 int moleActive;
 int notPopped;
 long long popUpTimeStamp;
-long long popTime;
 long long cooldown_timer_mole;
-int first_time;
 
 // Helemaal crazy
 CRGB leds[NUM_LEDS * 3] = {0};
@@ -60,12 +71,24 @@ CHSV HSV_leds[NUM_LEDS * 3] = {CHSV(0, 0, 0)};
 int hue_comet[NUM_LEDS * 3] = {0};
 int value_comet[COMET_SIZE] = {0};
 
+//SLAVE variables
+int hit_detected;
+enum SLAVESTATE
+{
+    OFF,
+    START,
+    STOP,
+    IN_GAME
+};
+SLAVESTATE slave_state;
+
 CLEDController *led_controller;
 
 enum ROLE
 {
     MASTER,
-    SLAVE
+    SLAVE,
+    UNDETERMINED
 };
 ROLE role;
 
@@ -80,6 +103,82 @@ enum STATE
 };
 STATE state;
 
+//[General function]
+//Determines I2C adress (master/slave) of the device
+//Input: none
+//Output: returns its adress
+int determineI2CAdress()
+{
+  if(digitalRead(15))
+  {
+    return 0;
+  }
+  if(digitalRead(5))
+  {
+    return 5;
+  }
+  if(digitalRead(18))
+  {
+    return 6;
+  }
+  if(digitalRead(19))
+  {
+    return 7;
+  }
+  if(digitalRead(2))
+  {
+    return 8;
+  }
+  return -1;
+}
+
+void set_total_ring_color(int r, int g, int b)
+{
+    for (int i = 0; i < NUM_LED_RING_PIXELS; i++)
+    {
+        led_ring.setPixelColor(i, led_ring.Color(r,g,b));
+    }
+}
+
+//[General function]
+//Determines role (master/slave) of the device and provides the option to determine ring color
+//Input: none
+//Output: changes role variable (master/slave), returns 0 if behavior was as expected
+int determineRole()
+{
+  if(digitalRead(15))
+  {
+    role = MASTER;
+    set_total_ring_color(0,255,0);
+    return 0;
+  }
+  if(digitalRead(5))
+  {
+    role = SLAVE;
+    set_total_ring_color(0,255,0);
+    return 0;
+  }
+  if(digitalRead(18))
+  {
+    role = SLAVE;
+    set_total_ring_color(0,255,0);
+    return 0;
+  }
+  if(digitalRead(19))
+  {
+    role = SLAVE;
+    set_total_ring_color(0,255,0);
+    return 0;
+  }
+  if(digitalRead(2))
+  {
+    role = SLAVE;
+    set_total_ring_color(0,255,0);
+    return 0;
+  }
+  return -1;
+}
+
 // Helper function for LED animation
 int value_array_construction()
 {
@@ -89,13 +188,14 @@ int value_array_construction()
     }
 }
 
-// Helper function for LED animation
-int animation_array_construction(CRGB *led_array)
+// [DEMO function, legacy]
+// Constructs a red led section as big as the physical led strips itself
+int animation_array_construction(CRGB *led_array, int r, int g, int b)
 {
 
     for (int i = 0; i < NUM_LEDS; i++)
     {
-        led_array[NUM_LEDS + i] = CRGB::Red;
+        led_array[NUM_LEDS + i] = CRGB(r,g,b);
     }
     return 0;
 }
@@ -162,9 +262,24 @@ void resetSimonSays()
     simon_pattern_length = 0;
 }
 
+//[Master function]
+// Requests input data from slaves
+// Input: none
+// Output: returns the drum that first has been hit, from slave address 5 to 8
 int getInputData()
 {
-    return 99;
+    for (int i = 0; i < NUM_SENSORS-1; i++)
+    {
+        Wire.requestFrom(i+5,1);
+        while (Wire.available())
+        {
+            if (Wire.read() == 1)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
 }
 
 // Compare actual drum hit to expected drum hit for simon says mechanics
@@ -196,7 +311,7 @@ void checkCorrectHit()
             state = PATTERN_SHOW;
         }
     }
-    else if (current_value != 99)
+    else if (current_value != -1)
     {
         Serial.printf("Sensor %d hit, incorrect\n", current_value);
         // TODO: Communicate to the rest of the system that game is over
@@ -225,31 +340,34 @@ boolean timeIsUp()
 
 int gameStart()
 {
+    animation_array_construction(&leds[NUM_LEDS],0,255,0);
+    
+    int index = (2*NUM_LEDS/TOTAL_GAME_START_ANIMATION_TIME_MS)*(millis()-game_start_timer);//weet niet of dit werkt, berekent eerst een factor uit daarna vermenigvuldigd deze met de verstreken tijd. Zo zou de animatie even lang als de "total game start animation time" moeten duren
+    
+    if (index < NUM_LEDS*2) 
+    {
+        led_head = &led_head[index];
+    }
+    
+    if (index >= NUM_LEDS*2)
+    {
+        delay(500);
+        // Update pattern
+        updateSimonSays();
+        // Start game
+        Serial.print("Pattern: ");
+        state = PATTERN_SHOW;
+    }
+    
+
     // zet 1 licht aan en wacht op de gebruiker, als dit te lang duurt terug naar idle
+    
     return 0;
 }
 
-// void basicInteraction() // vervangen / weghalen
-// {
-//     if (readIfMoleHit(SENSOR_THRESHOLD) && first_time)
-//     {
-//         hue_comet[0] = random(256);
-//         first_time = false;
-//     }
-//     else
-//     {
-//         if (!readIfMoleHit(SENSOR_THRESHOLD))
-//         {
-//             first_time = true;
-//         }
-//     }
-// }
-
-void updateLedstrip()
+void comet_ledstrip()
 {
-    CRGB *led_head = &leds[0];
 
-    uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
 
     for (int32_t i = virtual_beam_size; i >= 0; i--)
     {
@@ -273,45 +391,176 @@ void updateLedstrip()
             }
         }
     }
+}
+
+void updateLedstrip()
+{
     led_controller->setLeds(led_head, NUM_LEDS);
     FastLED.show();
 }
 
 void updateLedring()
 {
+    int mapped_analog_value = map(analogRead(ANALOG_SENSOR_INPUT_PIN),0,4095,0,255);
+    led_ring.setBrightness(mapped_analog_value);
+    led_ring.show();
 }
 
-void roleSwitch()
+//[Slave function]
+// Sends the value of hit_detected variable to let the master know if a hit has been detected. After sending the value the hit_detected variable is reset to 0
+// Input: none
+// Output: none
+void sendIfHitDetected()
 {
-    // Switch microcontroller role
-    if (digitalRead(SWITCH_PIN) <= 100)
+    Serial.println(hit_detected);
+    Wire.write(hit_detected);
+    hit_detected = 0;
+}
+
+//[Slave function]
+// 
+// Input: none
+// Output: none
+void receiveState(int len)
+{
+    int state;
+    while (Wire.available())
     {
-        role = MASTER;
+        state = Wire.read();
+        Serial.println(state);
     }
-    else
+    
+    switch (state)
     {
-        role = SLAVE;
+    case 0:
+        state = OFF;
+        break;
+    case 1:
+        state = START;
+        game_start_timer = millis();
+        break;
+    case 2:
+        state = STOP;
+        break;
+    case 3:
+        state = IN_GAME;
+        break;
+    default:
+        break;
     }
+}
+
+//{Setup functions}
+
+void master_setup()
+{
+    Wire.begin();
+
+    state = IDLE;
+}
+
+void slave_setup(int I2C_adress)
+{
+    Wire.begin(I2C_adress);
+    Wire.onReceive(receiveState);
+    Wire.onRequest(sendIfHitDetected);
+    
+}
+
+//{Loop functions}
+
+// general behavior
+void general_loop()
+{
+    updateLedstrip();
+    updateLedring();
+}
+
+// Slave behavior
+void slave_loop()
+{
+    general_loop();
+}
+
+// Master behavior
+void master_loop()
+{
+    switch (state)
+    {
+        case IDLE:
+            if (getInputData() != -1)
+            {
+                Serial.println("GAME START");
+                state = GAME_START;
+            }
+            break;
+
+        case GAME_START:
+            gameStart();
+            break;
+
+        case ACTIVE:
+            checkCorrectHit();
+            if (timeIsUp())
+            {
+                state = GAME_OVER;
+            }
+            break;
+
+        case PATTERN_SHOW:
+            // Don't read inputs here
+            showSimonSays();
+            break;
+
+        case GAME_OVER:
+            // Show game over animation > go to idle
+            Serial.println("GAME OVER");
+            state = IDLE;
+            break;
+
+        default:
+            break;
+    }
+    general_loop();
 }
 
 void setup()
 {
+
     Serial.begin(115200);
-    setCpuFrequencyMhz(240);
     Serial.println("SYSTEM BOOTED");
-    roleSwitch();
-    state = IDLE;
 
+    //setup led strips 
     FastLED.setBrightness(100);
-    animation_array_construction(leds);
-    // value_array_construction();
-    // led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-    led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, 0, NUM_LEDS_STRIP).setCorrection(TypicalLEDStrip);
-    FastLED.addLeds<CHIPSET, DATA_PIN_2, COLOR_ORDER>(leds, 180, NUM_LEDS_STRIP).setCorrection(TypicalLEDStrip);
-    FastLED.addLeds<CHIPSET, DATA_PIN_3, COLOR_ORDER>(leds, 360, NUM_LEDS_STRIP).setCorrection(TypicalLEDStrip);
+    led_controller = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, 0, NUM_LEDS_STRIP_3M).setCorrection(TypicalLEDStrip);
+    FastLED.addLeds<CHIPSET, DATA_PIN_2, COLOR_ORDER>(leds, 180, NUM_LEDS_STRIP_3M).setCorrection(TypicalLEDStrip);
+    FastLED.addLeds<CHIPSET, DATA_PIN_3, COLOR_ORDER>(leds, 360, NUM_LEDS_STRIP_5M).setCorrection(TypicalLEDStrip);
+    FastLED.addLeds<CHIPSET, DATA_PIN_3, COLOR_ORDER>(leds, 660, NUM_LEDS_STRIP_5M).setCorrection(TypicalLEDStrip);
 
-    popTime = 0;
-    first_time = true;
+
+    role = UNDETERMINED;
+
+    if(!determineRole())
+    {
+        Serial.println("Role undetermined: check wiring on pins 15, 5, 18, 19 and 21");
+    }
+
+    switch (role)
+    {
+    case MASTER:
+        master_setup();
+        master_loop();
+        break;
+
+    case SLAVE:
+        slave_setup(determineI2CAdress());
+        slave_loop();
+        break;
+
+    default:
+        Serial.println("Role undetermined: check wiring on pins 15, 5, 18, 19 and 21");
+        break;
+    }
 }
 
 void loop()
@@ -324,7 +573,7 @@ void loop()
         switch (state)
         {
         case IDLE:
-            if (getInputData() != 99)
+            if (getInputData() != -1)
             {
                 Serial.println("GAME START");
                 // Update pattern
