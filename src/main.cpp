@@ -35,7 +35,7 @@ CLEDController *led_strip_controllers[NUM_STRIPS];
 #define LED_RING_DATA_PIN 26
 #define NUM_LED_RING_PIXELS 60
 CLEDController *led_ring_controller;
-CRGB led_ring_array[3*NUM_LED_RING_PIXELS];
+CRGB led_ring_array[3 * NUM_LED_RING_PIXELS];
 CRGB *led_ring_array_head;
 
 // Sensor config
@@ -82,7 +82,7 @@ int value_comet[COMET_SIZE] = {0};
 CRGB *led_head = &leds[0];
 uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
 
-//SLAVE variables
+// SLAVE variables
 int hit_detected;
 enum SLAVESTATE
 {
@@ -120,62 +120,64 @@ void set_total_ring_color(int r, int g, int b)
 {
     for (int i = 0; i < NUM_LED_RING_PIXELS; i++)
     {
-        led_ring_array[NUM_LED_RING_PIXELS+i] = CRGB(r,g,b);
+        led_ring_array[NUM_LED_RING_PIXELS + i] = CRGB(r, g, b);
     }
 }
 
-//animation function if wrong mole is hit
+// animation function if wrong mole is hit
+// Q: Werkt dit?
 void led_ring_animation_wrong_mole()
 {
-    set_total_ring_color(255,0,0);
+    set_total_ring_color(255, 0, 0);
     for (int i = 0; i < 3; i++)
     {
         led_ring_controller->showLeds(255);
         FastLED.show();
-        delay(500);                
+        delay(500);
         led_ring_controller->showLeds(0);
         FastLED.show();
-        delay(500);                
+        delay(500);
     }
 }
 
-//animation if correct mole is hit
+// animation if correct mole is hit
+// Q: Werkt dit?
 void led_ring_animation_correct_mole()
 {
-    set_total_ring_color(0,255,0);
+    set_total_ring_color(0, 255, 0);
     led_ring_controller->showLeds(255);
     FastLED.show();
-    delay(300);     
+    delay(300);
     led_ring_controller->showLeds(0);
-    FastLED.show();   
+    FastLED.show();
 }
 
+// Q: Werkt dit?
 void animation_show_mole()
 {
     led_ring_controller->showLeds(255);
     FastLED.show();
-    delay(300);     
+    delay(300);
     led_ring_controller->showLeds(0);
-    FastLED.show();   
+    FastLED.show();
 }
 
 void updateLedring()
 {
-    //int mapped_analog_value = map(analogRead(ANALOG_SENSOR_INPUT_PIN),0,4095,0,255);
-    //led_ring_controller->showLeds(mapped_analog_value);
+    // int mapped_analog_value = map(analogRead(ANALOG_SENSOR_INPUT_PIN),0,4095,0,255);
+    // led_ring_controller->showLeds(mapped_analog_value);
     led_ring_controller->setLeds(led_ring_array_head, NUM_LED_RING_PIXELS);
     FastLED.show();
 }
 
-//nog niet gevalideerd, steek er nu (3:40 19/9/24) even geen tijd in
+// nog niet gevalideerd, steek er nu (3:40 19/9/24) even geen tijd in
 void construct_fading_led_strip(int led_count)
 {
     for (int i = 0; i < led_count; i++)
     {
-        int brightness = map(i,0,led_count,0,255);
+        int brightness = map(i, 0, led_count, 0, 255);
         led_ring_controller->showLeds(brightness);
     }
-    
 }
 
 //---------------------
@@ -186,7 +188,7 @@ void led_strip_setLeds()
 {
     for (int i = 0; i < NUM_STRIPS; i++)
     {
-        led_strip_controllers[i]->setLeds(led_head+led_strip_offset[i],led_strip_length[i]);
+        led_strip_controllers[i]->setLeds(led_head + led_strip_offset[i], led_strip_length[i]);
     }
 }
 
@@ -239,19 +241,21 @@ int animation_array_construction(CRGB *led_array, int r, int g, int b)
 
     for (int i = 0; i < NUM_LEDS; i++)
     {
-        led_array[NUM_LEDS + i] = CRGB(r,g,b);
+        led_array[NUM_LEDS + i] = CRGB(r, g, b);
     }
     return 0;
 }
 
+// Q: Werkt dit?
 void game_over_animation()
 {
     led_head = &leds[NUM_LEDS];
-    animation_array_construction(&leds[0],255,0,0);
+    animation_array_construction(&leds[0], 255, 0, 0);
     updateLedstrip();
     delay(3000);
 }
 
+// Q: Legacy?
 int idleAnimation()
 {
     // Wat doet dit allemaal? Is dit nodig voor idle?
@@ -276,50 +280,50 @@ int idleAnimation()
 //------------------------
 
 //[General function]
-//Determines role (master/slave) of the device and provides the option to determine ring color
-//Input: none
-//Output: changes role variable (master/slave), returns 0 if behavior was as expected
+// Determines role (master/slave) of the device and provides the option to determine ring color
+// Input: none
+// Output: changes role variable (master/slave), returns 0 if behavior was as expected
 int determineRole()
 {
-  if(digitalRead(15))
-  {
-    role = MASTER;
-    set_total_ring_color(0,255,0);
-    Serial.println("Master online");
-    return 0;
-  }
-  if(digitalRead(5))
-  {
-    role = SLAVE;
-    set_total_ring_color(0,255,0);
-    Serial.println("Slave 5 online");
-    return 0;
-  }
-  if(digitalRead(18))
-  {
-    role = SLAVE;
-    set_total_ring_color(0,255,0);
-    Serial.println("Slave 6 online");
-    return 0;
-  }
-  if(digitalRead(19))
-  {
-    role = SLAVE;
-    set_total_ring_color(0,255,0);
-    Serial.println("Slave 7 online");
-    return 0;
-  }
-  if(digitalRead(2))
-  {
-    role = SLAVE;
-    set_total_ring_color(0,255,0);
-    Serial.println("Slave 8 online");
-    return 0;
-  }
-  return -1;
+    if (digitalRead(15))
+    {
+        role = MASTER;
+        set_total_ring_color(0, 255, 0);
+        Serial.println("Master online");
+        return 0;
+    }
+    if (digitalRead(5))
+    {
+        role = SLAVE;
+        set_total_ring_color(0, 255, 0);
+        Serial.println("Slave 5 online");
+        return 0;
+    }
+    if (digitalRead(18))
+    {
+        role = SLAVE;
+        set_total_ring_color(0, 255, 0);
+        Serial.println("Slave 6 online");
+        return 0;
+    }
+    if (digitalRead(19))
+    {
+        role = SLAVE;
+        set_total_ring_color(0, 255, 0);
+        Serial.println("Slave 7 online");
+        return 0;
+    }
+    if (digitalRead(2))
+    {
+        role = SLAVE;
+        set_total_ring_color(0, 255, 0);
+        Serial.println("Slave 8 online");
+        return 0;
+    }
+    return -1;
 }
 
-//stores adresses in sensor_adresses array dynamically
+// stores adresses in sensor_adresses array dynamically
 void store_sensor_adresses()
 {
     for (int i = 0; i < NUM_SENSORS; i++)
@@ -330,7 +334,7 @@ void store_sensor_adresses()
         }
         else
         {
-            sensor_adresses[i] = 4 + i ;
+            sensor_adresses[i] = 4 + i;
         }
     }
 }
@@ -340,81 +344,81 @@ void store_sensor_adresses()
 //--------------
 
 //[General function]
-//Determines I2C adress (master/slave) of the device
-//Input: none
-//Output: returns its adress
+// Determines I2C adress (master/slave) of the device
+// Input: none
+// Output: returns its adress
 int determineI2CAdress()
 {
-  if(digitalRead(15))
-  {
-    return 0;
-  }
-  if(digitalRead(5))
-  {
-    return 5;
-  }
-  if(digitalRead(18))
-  {
-    return 6;
-  }
-  if(digitalRead(19))
-  {
-    return 7;
-  }
-  if(digitalRead(2))
-  {
-    return 8;
-  }
-  return -1;
+    if (digitalRead(15))
+    {
+        return 0;
+    }
+    if (digitalRead(5))
+    {
+        return 5;
+    }
+    if (digitalRead(18))
+    {
+        return 6;
+    }
+    if (digitalRead(19))
+    {
+        return 7;
+    }
+    if (digitalRead(2))
+    {
+        return 8;
+    }
+    return -1;
 }
 
 void error_handler_I2C_bus(byte I2C_error)
 {
     switch (I2C_error)
     {
-      case (1):
+    case (1):
         Serial.println("I2C bus error: data too long to fit in transmit buffer.");
         Serial.println("Check I2C bus on pins 21 and 22");
         break;
 
-      case (2):
+    case (2):
         Serial.println("I2C bus error: received NACK on transmit of address.");
         Serial.println("Check I2C bus on pins 21 and 22");
         break;
 
-      case (3):
+    case (3):
         Serial.println("I2C bus error: received NACK on transmit of data.");
         Serial.println("Check I2C bus on pins 21 and 22");
         break;
 
-      case (4):
+    case (4):
         Serial.println("I2C bus error: unknown error.");
         Serial.println("Check I2C bus on pins 21 and 22");
         break;
 
-      case (5):
+    case (5):
         Serial.println("I2C bus error: timeout.");
         Serial.println("Check I2C bus on pins 21 and 22");
         break;
 
-      default:
+    default:
         break;
     }
 }
 
 int update_slave_state(STATE s)
 {
-    for(int i = 0; i < 4; i++)
+    for (int i = 0; i < 4; i++)
     {
-        Wire.beginTransmission(i+5);
-        Wire.write((uint8_t)s); //send state variable to slaves
+        Wire.beginTransmission(i + 5);
+        Wire.write((uint8_t)s); // send state variable to slaves
         byte error = Wire.endTransmission();
         if (error)
         {
             error_handler_I2C_bus(error);
         }
     }
-    
+
     return 0;
 }
 
@@ -430,7 +434,7 @@ void sendIfHitDetected()
 }
 
 //[Slave function]
-// 
+//
 // Input: none
 // Output: none
 void receiveState(int len)
@@ -442,7 +446,7 @@ void receiveState(int len)
         message = Wire.read();
         Serial.println(message);
     }
-    
+
     switch (message)
     {
     case '0':
@@ -488,21 +492,20 @@ void receiveState(int len)
 }
 
 //[Master function]
-//send the slave a message
+// send the slave a message
 void message_slave(int slave_address)
 {
     Wire.beginTransmission(slave_address);
-    Wire.write('s'); //s = show
+    Wire.write('s'); // s = show
     byte error = Wire.endTransmission();
     if (error)
     {
         error_handler_I2C_bus(error);
     }
-    
 }
 
 //[Master function]
-//send the slave a message
+// send the slave a message
 void message_slave(int slave_address, uint8_t message)
 {
     Wire.beginTransmission(slave_address);
@@ -512,11 +515,10 @@ void message_slave(int slave_address, uint8_t message)
     {
         error_handler_I2C_bus(error);
     }
-    
 }
 
 //[Master function]
-//send the slave a message
+// send the slave a message
 void message_slave(int slave_address, char message)
 {
     Wire.beginTransmission(slave_address);
@@ -526,7 +528,6 @@ void message_slave(int slave_address, char message)
     {
         error_handler_I2C_bus(error);
     }
-    
 }
 
 //----------------------
@@ -541,18 +542,22 @@ void showSimonSays()
         show_timer = millis();
         // TODO: Communicate with other systems to turn LED ring (& beam?) on in the correct system
 
-        // Increment counter
+        // Print pattern
         Serial.printf("%d ", simon_says[simon_increment]);
+        // Increment counter
+        simon_increment++;
 
-        if (simon_says[simon_increment] == 0) //if-statement to decide who has to take action master/slave
+        if (simon_says[simon_increment] == 0) // if-statement to decide who has to take action master/slave
         {
-            animation_show_mole(); 
+            // Animate here
+            animation_show_mole();
         }
         else
         {
+            // Animate on slave
             message_slave(sensor_adresses[simon_says[simon_increment]]);
         }
-        simon_increment++;
+
         // If entire pattern is shown
         if (simon_increment >= simon_pattern_length)
         {
@@ -590,13 +595,13 @@ int is_mole_hit()
 {
     int piezoMeasurement = analogRead(ANALOG_SENSOR_INPUT_PIN);
     piezoSensor.reading(piezoMeasurement);
-    if (piezoMeasurement-piezoSensor.getAvg() > 2000 && millis() - hit_timer < 300)
+    if (piezoMeasurement - piezoSensor.getAvg() > 2000 && millis() - hit_timer < 300)
     {
         Serial.print(piezoMeasurement);
         hit_timer = millis();
         return 0;
     }
-    return -1;    
+    return -1;
 }
 
 //[Master function]
@@ -616,7 +621,7 @@ int getInputData()
         }
         else
         {
-            Wire.requestFrom(i+4,1);
+            Wire.requestFrom(i + 4, 1);
             while (Wire.available())
             {
                 if (Wire.read() == 1)
@@ -639,21 +644,26 @@ void checkCorrectHit()
     if (current_value == simon_says[simon_increment])
     {
         Serial.printf("Sensor %d hit, correct\n", current_value);
-        // TODO: LED ring animation
-        if (sensor_adresses[current_value] == 0) //simpele plaats vervanger
+        // Reset game timer
+        reset_timer = millis();
+
+        // LED ring animation
+        if (sensor_adresses[current_value] == 0) // simpele plaats vervanger
         {
             led_ring_animation_correct_mole();
         }
         else
         {
-            message_slave(sensor_adresses[current_value],'g'); //g voor het engelse "good"
+            message_slave(sensor_adresses[current_value], 'g'); // g voor het engelse "good"
         }
 
         // LED beam animation
+        // Q: Moet dit niet ook in bovenstaande if-statement? Nu gaat altijd animatie aan op master controller?
         hue_comet[0] = random(256);
 
         // Increment through simon says array
         simon_increment++;
+
         // If end is reached (current pattern is replicated)
         if (simon_increment >= simon_pattern_length)
         {
@@ -671,13 +681,15 @@ void checkCorrectHit()
     else if (current_value != -1)
     {
         Serial.printf("Sensor %d hit, incorrect\n", current_value);
+
+        // Do animations
         if (sensor_adresses[current_value] == 0)
         {
             led_ring_animation_wrong_mole();
         }
         else
         {
-            message_slave(sensor_adresses[current_value],'w');
+            message_slave(sensor_adresses[current_value], 'w');
         }
 
         // Reset simon says
@@ -693,6 +705,7 @@ void checkCorrectHit()
     }
 }
 
+// Time until game reset without action
 boolean timeIsUp()
 {
     if (reset_delay < millis() - reset_timer)
@@ -705,30 +718,30 @@ boolean timeIsUp()
 
 int gameStart()
 {
-    //insert start animation
-    
-    if (3*NUM_LEDS >= NUM_LEDS*2)
+    // insert start animation
+
+    // Q: Dit is altijd true? Waarom moet dit hier?
+    if (3 * NUM_LEDS >= NUM_LEDS * 2)
     {
         delay(500);
         // Update pattern
         updateSimonSays();
-        // Start game
+        // Start game and how pattern
         Serial.print("Pattern: ");
         state = PATTERN_SHOW;
         update_slave_state(PATTERN_SHOW);
         show_timer = millis();
     }
-    
 
     // zet 1 licht aan en wacht op de gebruiker, als dit te lang duurt terug naar idle
-    
+
     return 0;
 }
 //{Setup functions}
 
 void master_setup()
 {
-    store_sensor_adresses(); //fills the sensor_adresses array with correct adresses
+    store_sensor_adresses(); // fills the sensor_adresses array with correct adresses
 
     Wire.begin();
 
@@ -740,7 +753,6 @@ void slave_setup(int I2C_adress)
     Wire.begin(I2C_adress);
     Wire.onReceive(receiveState);
     Wire.onRequest(sendIfHitDetected);
-    
 }
 
 //{Loop functions}
@@ -755,11 +767,11 @@ void general_loop()
 // Slave behavior
 void slave_loop()
 {
-    while(1)
+    while (1)
     {
         int piezoMeasurement = analogRead(ANALOG_SENSOR_INPUT_PIN);
         piezoSensor.reading(piezoMeasurement);
-        if (piezoMeasurement-piezoSensor.getAvg() > 2000 && millis() - hit_timer < 300 && state == ACTIVE)
+        if (piezoMeasurement - piezoSensor.getAvg() > 2000 && millis() - hit_timer < 300 && state == ACTIVE)
         {
             hit_timer = millis();
             mole_is_hit = 1;
@@ -771,47 +783,47 @@ void slave_loop()
 // Master behavior
 void master_loop()
 {
-    while(1)
+    while (1)
     {
         switch (state)
         {
-            case IDLE:
-                if (getInputData() != -1)
-                {
-                    Serial.println("GAME START");
-                    state = GAME_START;
-                    update_slave_state(GAME_START); // update slaves with current state on the master
-                }
-                //Willen we een wacht animatie?
-                break;
+        case IDLE:
+            if (getInputData() != -1)
+            {
+                Serial.println("GAME START");
+                state = GAME_START;
+                update_slave_state(GAME_START); // update slaves with current state on the master
+            }
+            // Willen we een wacht animatie?
+            break;
 
-            case GAME_START:
-                gameStart();
-                break;
+        case GAME_START:
+            gameStart();
+            break;
 
-            case ACTIVE:
-                checkCorrectHit();
-                if (timeIsUp())
-                {
-                    state = GAME_OVER;
-                    update_slave_state(GAME_OVER);
-                }
-                break;
+        case ACTIVE:
+            checkCorrectHit();
+            if (timeIsUp())
+            {
+                state = GAME_OVER;
+                update_slave_state(GAME_OVER);
+            }
+            break;
 
-            case PATTERN_SHOW:
-                // Don't read inputs here
-                showSimonSays();
-                break;
+        case PATTERN_SHOW:
+            // Don't read inputs here
+            showSimonSays();
+            break;
 
-            case GAME_OVER:
-                // Show game over animation > go to idle
-                Serial.println("GAME OVER");
-                game_over_animation();
-                state = IDLE;
-                break;
+        case GAME_OVER:
+            // Show game over animation > go to idle
+            Serial.println("GAME OVER");
+            game_over_animation();
+            state = IDLE;
+            break;
 
-            default:
-                break;
+        default:
+            break;
         }
         general_loop();
     }
@@ -821,20 +833,18 @@ void setup()
 {
     led_ring_array_head = &led_ring_array[0];
     CRGB colorxj;
-    colorxj.setRGB(255,0,0);
+    colorxj.setRGB(255, 0, 0);
     Serial.begin(115200);
     Serial.println("SYSTEM BOOTED");
 
-    //setup moving average
+    // setup moving average
     piezoSensor.begin();
     for (int i = 0; i < 2000; i++)
     {
         piezoSensor.reading(analogRead(ANALOG_SENSOR_INPUT_PIN));
     }
-    
 
-
-    //setup led strips 
+    // setup led strips
     FastLED.setBrightness(100);
     led_strip_controllers[0] = &FastLED.addLeds<CHIPSET, DATA_PIN, COLOR_ORDER>(leds, 0, NUM_LEDS_STRIP_3M).setCorrection(TypicalLEDStrip);
     led_strip_controllers[1] = &FastLED.addLeds<CHIPSET, DATA_PIN_2, COLOR_ORDER>(leds, 180, NUM_LEDS_STRIP_3M).setCorrection(TypicalLEDStrip);
@@ -845,11 +855,12 @@ void setup()
     hit_timer = 0;
     role = UNDETERMINED;
 
-    if(determineRole())
+    if (determineRole())
     {
         Serial.println("Role undetermined: check wiring on pins 15, 5, 18, 19 and 21");
         Serial.println("Program halt");
-        for(;;);
+        for (;;)
+            ;
     }
 
     switch (role)
@@ -867,14 +878,15 @@ void setup()
     default:
         Serial.println("Role undetermined: role variable isn't changed, check the program structure");
         Serial.println("Program halt");
-        for(;;);
+        for (;;)
+            ;
         break;
     }
     Serial.println("Program ended, this should not happen");
-    for(;;);
+    for (;;)
+        ;
 }
 
 void loop()
 {
-
 }
