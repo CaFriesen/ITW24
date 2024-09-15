@@ -34,9 +34,22 @@ CLEDController *led_strip_controllers[NUM_STRIPS];
 // LED ring config
 #define LED_RING_DATA_PIN 26
 #define NUM_LED_RING_PIXELS 60
+
+// Fastled
 CLEDController *led_ring_controller;
 CRGB led_ring_array[3 * NUM_LED_RING_PIXELS];
 CRGB *led_ring_array_head;
+
+// Neopixel (used in idle animation)
+#define BRIGHTNESS_RING 50
+Adafruit_NeoPixel ring(NUM_LED_RING_PIXELS, LED_RING_DATA_PIN, NEO_GRB + NEO_KHZ800);
+unsigned long led_ring_timer = 0;
+int shutoff_delay = 150;
+int ledPos = 0;
+int red = 255;
+int green = 255;
+int blue = 0;
+int rounds = 0;
 
 // Sensor config
 #define NUM_SENSORS 5
@@ -112,8 +125,84 @@ enum STATE
 };
 STATE state;
 
+// Helper function for idle led ring
+void fadeToBlack(int ledNum, byte fadeValue)
+{
+    uint32_t oldColor;
+    uint8_t r, g, b;
+
+    oldColor = ring.getPixelColor(ledNum);
+
+    r = (oldColor & 0x00ff0000UL) >> 16;
+    g = (oldColor & 0x0000ff00UL) >> 8;
+    b = (oldColor & 0x000000ffUL);
+
+    r = (r <= 10) ? 0 : (int)r - (r * fadeValue / 256);
+    g = (g <= 10) ? 0 : (int)g - (g * fadeValue / 256);
+    b = (b <= 10) ? 0 : (int)b - (b * fadeValue / 256);
+
+    ring.setPixelColor(ledNum, r, g, b);
+}
+
+// Idle animation (behoorlijk lelijke code wel)
+void idleRingAnimation(byte meteorSize, byte meteorTrail, boolean randomTrail, int speedDelay, int r, int g, int b)
+{
+    // meteorSize in amount of LEDs
+    // meteorTrail determines how fast the trail dissappears (higher is faster)
+    // randomTrail enables or disables random trail sharts
+    // speedDelay is the delay (sync to BPM)
+    // r g b are the color values
+
+    // Guard for timing
+    if (led_ring_timer > millis() - speedDelay)
+    {
+        return;
+    }
+
+    led_ring_timer = millis(); // time is rewritten to current millis starting a new interval
+
+    // Position is updated
+    if (ledPos < NUM_LED_RING_PIXELS)
+    {
+        ledPos++;
+    }
+    else
+    {
+        ledPos = 0;
+        red = 0;
+        green = 0;
+        blue = 0;
+        rounds++;
+    }
+
+    if (rounds == 2)
+    {
+        blue = 255;
+        rounds = 0;
+    }
+
+    // Fade LEDs
+    for (int j = 0; j <= NUM_LED_RING_PIXELS; j++)
+    {
+        if ((!randomTrail) || (random(10) > 5))
+        {
+            fadeToBlack(j, meteorTrail);
+        }
+    }
+    // Draw meteor
+    for (int j = 0; j < meteorSize; j++)
+    {
+        if (ledPos >= j)
+        {
+            ring.setPixelColor(ledPos - j, r, g, b);
+        }
+    }
+    // Show LEDs
+    ring.show();
+}
+
 //--------------------
-// Led ring functions
+// Led ring functions (fastled)
 //--------------------
 
 void set_total_ring_color(int r, int g, int b)
@@ -125,10 +214,9 @@ void set_total_ring_color(int r, int g, int b)
 }
 
 // animation function if wrong mole is hit
-// Q: Werkt dit?
 void led_ring_animation_wrong_mole()
 {
-    set_total_ring_color(255, 0, 0);
+    set_total_ring_color(random(150, 255), 0, 0);
     for (int i = 0; i < 3; i++)
     {
         led_ring_controller->showLeds(255);
@@ -136,38 +224,58 @@ void led_ring_animation_wrong_mole()
         delay(500);
         led_ring_controller->showLeds(0);
         FastLED.show();
-        delay(500);
+        delay(200);
     }
+
+    // Reset dim timer
+    led_ring_timer = millis();
 }
 
 // animation if correct mole is hit
-// Q: Werkt dit?
 void led_ring_animation_correct_mole()
 {
-    set_total_ring_color(0, 255, 0);
+    set_total_ring_color(0, random(0, 255), random(0, 255));
     led_ring_controller->showLeds(255);
     FastLED.show();
-    delay(300);
-    led_ring_controller->showLeds(0);
-    FastLED.show();
+
+    // Reset dim timer
+    led_ring_timer = millis();
 }
 
-// Q: Werkt dit?
+// animation to show mole in simon says
 void animation_show_mole()
 {
+    set_total_ring_color(255, 255, 255);
     led_ring_controller->showLeds(255);
     FastLED.show();
-    delay(300);
-    led_ring_controller->showLeds(0);
-    FastLED.show();
+
+    // Reset dim timer
+    led_ring_timer = millis();
 }
 
+// Q: Wat doet dit?
 void updateLedring()
 {
     // int mapped_analog_value = map(analogRead(ANALOG_SENSOR_INPUT_PIN),0,4095,0,255);
     // led_ring_controller->showLeds(mapped_analog_value);
     led_ring_controller->setLeds(led_ring_array_head, NUM_LED_RING_PIXELS);
     FastLED.show();
+}
+
+// Turn led ring off
+// This function should always run to turn led ring off automatically when timer has not been reset
+void dimLedring()
+{
+    // Timer for led shut-off
+    if (led_ring_timer + shutoff_delay < millis())
+    {
+        // Reset timer
+        led_ring_timer = millis();
+
+        // Leds off
+        led_ring_controller->showLeds(0);
+        FastLED.show();
+    }
 }
 
 // nog niet gevalideerd, steek er nu (3:40 19/9/24) even geen tijd in
@@ -184,6 +292,7 @@ void construct_fading_led_strip(int led_count)
 // Led strip functions
 //---------------------
 
+// Q: Moet comet_ledstrip hier gebruikt worden?
 void led_strip_setLeds()
 {
     for (int i = 0; i < NUM_STRIPS; i++)
@@ -192,12 +301,14 @@ void led_strip_setLeds()
     }
 }
 
+// Q: Of hier comet_ledstrip gebruiken?
 void updateLedstrip()
 {
     led_strip_setLeds();
     FastLED.show();
 }
 
+// Q: Waarom wordt de komeet nergens gebruikt?
 void comet_ledstrip()
 {
     for (int32_t i = virtual_beam_size; i >= 0; i--)
@@ -244,6 +355,56 @@ int animation_array_construction(CRGB *led_array, int r, int g, int b)
         led_array[NUM_LEDS + i] = CRGB(r, g, b);
     }
     return 0;
+}
+
+// Niet getest
+// Idee is dat er een klein beetje random groen blauwe slang over alle ledstrips de drums ingaat
+void gameStartLedstrip()
+{
+    // Start animation
+    for (int i = 0; i < NUM_LEDS * 2; i++)
+    {
+        leds[i] = CRGB(0, random(150, 250), random(150, 250));
+    }
+    for (int i = NUM_LEDS; i < NUM_LEDS * 2; i++)
+    {
+        leds[i] = CRGB::Black;
+    }
+    for (int i = 0; i < NUM_STRIPS; i++)
+    {
+        for (int j = 0; j < NUM_LEDS * 3; j++)
+        {
+            // Q: Weet niet of ledstrip nu goed aangaat
+            led_strip_controllers[i]->setLeds(&leds[NUM_LEDS * 2 - j], NUM_LEDS);
+            FastLED.show();
+            delay(10);
+        }
+    }
+}
+
+// Niet getest
+// Idee is dat er een klein beetje random rode slang over alle ledstrips de drums uitgaat
+void gameOverLedstrip()
+{
+    // Animation
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+        leds[i] = CRGB(random(150, 255), 0, 0);
+    }
+    for (int i = NUM_LEDS; i < NUM_LEDS * 2; i++)
+    {
+        leds[i] = CRGB::Black;
+    }
+    for (int i = 0; i < NUM_STRIPS; i++)
+    {
+        for (int j = 0; j < NUM_LEDS * 3; j++)
+        {
+            // Q: Weet niet of ledstrip nu goed aangaat
+            led_strip_controllers[i]->setLeds(&leds[j], NUM_LEDS);
+            FastLED.show();
+            delay(10);
+        }
+    }
 }
 
 // Q: Werkt dit?
@@ -452,6 +613,7 @@ void receiveState(int len)
     case '0':
         state = IDLE;
         Serial.println("IDLE");
+        idleRingAnimation(8, 30, false, 20, red, green, blue);
         break;
     case '1':
         state = ACTIVE;
@@ -460,11 +622,13 @@ void receiveState(int len)
     case '2':
         state = GAME_START;
         Serial.println("GAME_START");
+        gameStartLedstrip();
         break;
     case '3':
         state = GAME_OVER;
         Serial.println("GAME_OVER");
-        game_over_animation();
+        // game_over_animation();
+        gameOverLedstrip();
         break;
     case '4':
         state = PATTERN_SHOW;
@@ -477,10 +641,14 @@ void receiveState(int len)
     case 's':
         Serial.println("Showing mole");
         animation_show_mole();
+        // White flair
+        hue_comet[0] = 255;
         break;
     case 'g':
         Serial.println("Correct mole was hit");
         led_ring_animation_correct_mole();
+        // Random colored flair
+        hue_comet[0] = random(256);
         break;
     case 'w':
         Serial.println("Wrong mole was hit");
@@ -540,7 +708,6 @@ void showSimonSays()
     {
         // Reset timer
         show_timer = millis();
-        // TODO: Communicate with other systems to turn LED ring (& beam?) on in the correct system
 
         // Print pattern
         Serial.printf("%d ", simon_says[simon_increment]);
@@ -549,12 +716,14 @@ void showSimonSays()
 
         if (simon_says[simon_increment] == 0) // if-statement to decide who has to take action master/slave
         {
-            // Animate here
+            // Animate local ring
             animation_show_mole();
+            // Animate local strip (white flair)
+            hue_comet[0] = 255;
         }
         else
         {
-            // Animate on slave
+            // Animate on slave (ring + strip)
             message_slave(sensor_adresses[simon_says[simon_increment]]);
         }
 
@@ -637,7 +806,7 @@ int getInputData()
 // Compare actual drum hit to expected drum hit for simon says mechanics
 void checkCorrectHit()
 {
-    // Get data
+    // Get input data
     int current_value = getInputData();
 
     // If correct mole is hit
@@ -647,19 +816,22 @@ void checkCorrectHit()
         // Reset game timer
         reset_timer = millis();
 
-        // LED ring animation
-        if (sensor_adresses[current_value] == 0) // simpele plaats vervanger
+        if (sensor_adresses[current_value] == 0) // Animate on master
         {
+            // Led ring
             led_ring_animation_correct_mole();
+            // Led strip
+            hue_comet[0] = random(256);
         }
-        else
+        else // Animate on slave
         {
+            // ring + strip
             message_slave(sensor_adresses[current_value], 'g'); // g voor het engelse "good"
         }
 
         // LED beam animation
         // Q: Moet dit niet ook in bovenstaande if-statement? Nu gaat altijd animatie aan op master controller?
-        hue_comet[0] = random(256);
+        // hue_comet[0] = random(256);
 
         // Increment through simon says array
         simon_increment++;
@@ -682,12 +854,12 @@ void checkCorrectHit()
     {
         Serial.printf("Sensor %d hit, incorrect\n", current_value);
 
-        // Do animations
-        if (sensor_adresses[current_value] == 0)
+        // Do animations (ring only)
+        if (sensor_adresses[current_value] == 0) // animate on master
         {
             led_ring_animation_wrong_mole();
         }
-        else
+        else // animate on slave
         {
             message_slave(sensor_adresses[current_value], 'w');
         }
@@ -716,6 +888,7 @@ boolean timeIsUp()
     return false;
 }
 
+// NOTE: ik gebruik deze functie nu niet maar heb een deel hiervan rechtstreeks in de GAME_START state gezet
 int gameStart()
 {
     // insert start animation
@@ -726,7 +899,7 @@ int gameStart()
         delay(500);
         // Update pattern
         updateSimonSays();
-        // Start game and how pattern
+        // Start game and show pattern
         Serial.print("Pattern: ");
         state = PATTERN_SHOW;
         update_slave_state(PATTERN_SHOW);
@@ -762,6 +935,7 @@ void general_loop()
 {
     updateLedstrip();
     updateLedring();
+    dimLedring();
 }
 
 // Slave behavior
@@ -794,11 +968,21 @@ void master_loop()
                 state = GAME_START;
                 update_slave_state(GAME_START); // update slaves with current state on the master
             }
-            // Willen we een wacht animatie?
+            idleRingAnimation(8, 30, false, 20, red, green, blue);
             break;
 
         case GAME_START:
-            gameStart();
+            gameStartLedstrip(); // Blocking animation (with delays)
+            delay(1000);
+
+            // Update pattern
+            updateSimonSays();
+            // Start game and show pattern
+            Serial.print("Pattern: ");
+
+            state = PATTERN_SHOW;
+            update_slave_state(PATTERN_SHOW);
+            show_timer = millis();
             break;
 
         case ACTIVE:
@@ -818,7 +1002,9 @@ void master_loop()
         case GAME_OVER:
             // Show game over animation > go to idle
             Serial.println("GAME OVER");
-            game_over_animation();
+            // game_over_animation();
+            gameOverLedstrip(); // Blocking animation (with delays)
+            delay(1000);
             state = IDLE;
             break;
 
