@@ -84,14 +84,8 @@ uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
 
 //SLAVE variables
 int hit_detected;
-enum SLAVESTATE
-{
-    OFF,
-    START,
-    STOP,
-    IN_GAME
-};
-SLAVESTATE slave_state;
+char message;
+int message_read;
 
 enum ROLE
 {
@@ -435,55 +429,10 @@ void sendIfHitDetected()
 // Output: none
 void receiveState(int len)
 {
-    char message;
-
+    message_read = 0;
     while (Wire.available())
     {
         message = Wire.read();
-        Serial.println(message);
-    }
-    
-    switch (message)
-    {
-    case '0':
-        state = IDLE;
-        Serial.println("IDLE");
-        break;
-    case '1':
-        state = ACTIVE;
-        Serial.println("ACTIVE");
-        break;
-    case '2':
-        state = GAME_START;
-        Serial.println("GAME_START");
-        break;
-    case '3':
-        state = GAME_OVER;
-        Serial.println("GAME_OVER");
-        game_over_animation();
-        break;
-    case '4':
-        state = PATTERN_SHOW;
-        Serial.println("PATTERN_SHOW");
-        break;
-    case '5':
-        state = BASIC_INTERACTION;
-        Serial.println("BASIC_INTERACTION");
-        break;
-    case 's':
-        Serial.println("Showing mole");
-        animation_show_mole();
-        break;
-    case 'g':
-        Serial.println("Correct mole was hit");
-        led_ring_animation_correct_mole();
-        break;
-    case 'w':
-        Serial.println("Wrong mole was hit");
-        led_ring_animation_wrong_mole();
-        break;
-    default:
-        break;
     }
 }
 
@@ -731,6 +680,7 @@ void master_setup()
     store_sensor_adresses(); //fills the sensor_adresses array with correct adresses
 
     Wire.begin();
+    Wire.setClock(10000);
 
     state = IDLE;
 }
@@ -738,9 +688,10 @@ void master_setup()
 void slave_setup(int I2C_adress)
 {
     Wire.begin(I2C_adress);
+    Wire.setClock(10000);
     Wire.onReceive(receiveState);
     Wire.onRequest(sendIfHitDetected);
-    
+    message_read = 1;
 }
 
 //{Loop functions}
@@ -748,6 +699,7 @@ void slave_setup(int I2C_adress)
 // general behavior
 void general_loop()
 {
+    Serial.println(ESP.getFreeHeap());
     updateLedstrip();
     updateLedring();
 }
@@ -757,6 +709,54 @@ void slave_loop()
 {
     while(1)
     {
+        if (!message_read)
+        {
+            message_read = 1;
+            switch (message)
+            {
+                case '0':
+                    state = IDLE;
+                    Serial.println("IDLE");
+                    break;
+                case '1':
+                    state = ACTIVE;
+                    Serial.println("ACTIVE");
+                    break;
+                case '2':
+                    state = GAME_START;
+                    Serial.println("GAME_START");
+                    break;
+                case '3':
+                    state = GAME_OVER;
+                    Serial.println("GAME_OVER");
+                    game_over_animation();
+                    break;
+                case '4':
+                    state = PATTERN_SHOW;
+                    Serial.println("PATTERN_SHOW");
+                    break;
+                case '5':
+                    state = BASIC_INTERACTION;
+                    Serial.println("BASIC_INTERACTION");
+                    break;
+                case 's':
+                    Serial.println("Showing mole");
+                    animation_show_mole();
+                    break;
+                case 'g':
+                    Serial.println("Correct mole was hit");
+                    led_ring_animation_correct_mole();
+                    break;
+                case 'w':
+                    Serial.println("Wrong mole was hit");
+                    led_ring_animation_wrong_mole();
+                    break;
+                default:
+                    break;
+            }
+        }
+        
+
         int piezoMeasurement = analogRead(ANALOG_SENSOR_INPUT_PIN);
         piezoSensor.reading(piezoMeasurement);
         if (piezoMeasurement-piezoSensor.getAvg() > 2000 && millis() - hit_timer < 300 && state == ACTIVE)
