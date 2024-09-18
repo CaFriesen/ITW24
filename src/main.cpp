@@ -933,6 +933,7 @@ void slave_setup(int I2C_adress)
 // general behavior
 void general_loop()
 {
+    comet_ledstrip();
     updateLedstrip();
     updateLedring();
     dimLedring();
@@ -1006,6 +1007,7 @@ void master_loop()
             gameOverLedstrip(); // Blocking animation (with delays)
             delay(1000);
             state = IDLE;
+            update_slave_state(IDLE);
             break;
 
         default:
