@@ -24,7 +24,7 @@
 #define NUM_LEDS 960
 #define NUM_STRIPS 4
 int led_strip_length[] = {NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_5M, NUM_LEDS_STRIP_5M};
-int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_5M};
+int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M*2, NUM_LEDS_STRIP_3M*2+NUM_LEDS_STRIP_5M};
 uint32_t led_strip_data_pins[] = {DATA_PIN, DATA_PIN_2, DATA_PIN_3, DATA_PIN_4};
 CLEDController *led_strip_controllers[NUM_STRIPS];
 
@@ -86,6 +86,10 @@ uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
 int hit_detected;
 char message;
 int message_read;
+
+//Mole popping
+#define PARTITIONS 7
+#define NUM_LEDS_SEGMENT (NUM_LEDS/PARTITIONS)
 
 enum ROLE
 {
@@ -234,6 +238,18 @@ int animation_array_construction(CRGB *led_array, int r, int g, int b)
     for (int i = 0; i < NUM_LEDS; i++)
     {
         led_array[NUM_LEDS + i] = CRGB(r,g,b);
+    }
+    return 0;
+}
+
+// [DEMO function, legacy]
+// Constructs a led section as big as the parameter l, h sets the hue
+int animation_array_construction(CRGB *led_array, int l, int h)
+{
+
+    for (int i = 0; i < l; i++)
+    {
+        led_array[2*NUM_LEDS - i].setHSV(h,255,map(i,0,l,255,0));
     }
     return 0;
 }
@@ -843,38 +859,55 @@ void setup()
 
     led_ring_controller = &FastLED.addLeds<CHIPSET, LED_RING_DATA_PIN, COLOR_ORDER>(leds, 0, NUM_LED_RING_PIXELS).setCorrection(TypicalLEDStrip);
     hit_timer = 0;
-    role = UNDETERMINED;
 
-    if(determineRole())
+    animation_array_construction(&leds[0],100,0,0);
+}
+
+void hit_to_height(int height)
+{
+    for (int i = 0; i < height; i += 3)
     {
-        Serial.println("Role undetermined: check wiring on pins 15, 5, 18, 19 and 21");
-        Serial.println("Program halt");
-        for(;;);
+        led_head = &leds[NUM_LEDS*2-i];
+        updateLedstrip();
+        int x = map(i,0,NUM_LEDS,0,10);
+        delayMicroseconds(x*x);
+        //Serial.println(x*x);
     }
 
-    switch (role)
+    for (int i = height; i > 0; i--)
     {
-    case MASTER:
-        master_setup();
-        master_loop();
-        break;
-
-    case SLAVE:
-        slave_setup(determineI2CAdress());
-        slave_loop();
-        break;
-
-    default:
-        Serial.println("Role undetermined: role variable isn't changed, check the program structure");
-        Serial.println("Program halt");
-        for(;;);
-        break;
+        led_head = &leds[NUM_LEDS*2-i];
+        updateLedstrip();
+        int x = map(i,0,NUM_LEDS,0,10);
+        delayMicroseconds(x*x);
+        //Serial.println(x*x);
+        
     }
-    Serial.println("Program ended, this should not happen");
-    for(;;);
+    
 }
 
 void loop()
 {
+    int rawValue = 0;
+    while (rawValue < 50)
+    {
+        rawValue = analogRead(27);
+        Serial.println(rawValue);
+    }
+    int mappedValue;
+    mappedValue = map(rawValue, 0, 150, 0, 6);
+    
+    if(mappedValue > 6)
+    {
+        mappedValue = 6;
+    }
+
+    Serial.print(mappedValue);
+    Serial.print(" ");
+    int destination = NUM_LEDS_SEGMENT*mappedValue+random(NUM_LEDS_SEGMENT/2);
+    Serial.println(destination);
+    animation_array_construction(&leds[0], destination, random(255));
+    hit_to_height(destination);
+    
 
 }
