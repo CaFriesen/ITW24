@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#define FASTLED_ALLOW_INTERRUPTS 0
+#define FASTLED_INTERRUPT_RETRY_COUNT 1
 #include <FastLED.h>
 #include <Adafruit_NeoPixel.h>
 #include <Wire.h>
@@ -24,7 +26,7 @@
 #define NUM_LEDS 960
 #define NUM_STRIPS 4
 int led_strip_length[] = {NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_5M, NUM_LEDS_STRIP_5M};
-int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_5M};
+int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M * 2, NUM_LEDS_STRIP_5M + NUM_LEDS_STRIP_3M * 2};
 uint32_t led_strip_data_pins[] = {DATA_PIN, DATA_PIN_2, DATA_PIN_3, DATA_PIN_4};
 CLEDController *led_strip_controllers[NUM_STRIPS];
 
