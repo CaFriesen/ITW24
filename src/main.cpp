@@ -889,7 +889,7 @@ void hit_to_height(int height)
 void loop()
 {
     int rawValue = 0;
-    while (rawValue < 50)
+    while (rawValue < 500)
     {
         rawValue = analogRead(27);
         Serial.println(rawValue);
