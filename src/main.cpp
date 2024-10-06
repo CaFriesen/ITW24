@@ -20,8 +20,7 @@
 
 #define NUM_LEDS_STRIP_3M 180
 #define NUM_LEDS_STRIP_5M 300
-#define NUM_STRIPS 4
-#define NUM_LEDS (NUM_LEDS_STRIP_3M+ NUM_LEDS_STRIP_5M+100)
+#define NUM_LEDS NUM_LEDS_STRIP_3M*2 + NUM_LEDS_STRIP_5M*2
 #define NUM_STRIPS 4
 int led_strip_length[] = {NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_5M, NUM_LEDS_STRIP_5M};
 int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M * 2, NUM_LEDS_STRIP_3M * 2 + NUM_LEDS_STRIP_5M};
@@ -48,6 +47,9 @@ int red = 255;
 int green = 255;
 int blue = 0;
 int rounds = 0;
+int led_ring_on = 0;
+
+long long timer_comet;
 
 // Sensor config
 #define NUM_SENSORS 5
@@ -94,7 +96,7 @@ CHSV HSV_leds[NUM_LEDS * 3] = {CHSV(0, 0, 0)};
 int hue_comet[NUM_LEDS * 3] = {0};
 int value_comet[COMET_SIZE] = {0};
 CRGB *led_head = &leds[0];
-uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE;
+uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE +1;
 
 // SLAVE variables
 int hit_detected;
@@ -291,66 +293,59 @@ void comet_ledstrip()
 
 void setup()
 {
-    // led_ring_array_head = &led_ring_array[0];
-    CRGB colorxj;
-    colorxj.setRGB(255, 0, 0);
     Serial.begin(115200);
     Serial.println("SYSTEM BOOTED");
 
-    // setup moving average
-    piezoSensor.begin();
-    for (int i = 0; i < 2000; i++)
-    {
-        piezoSensor.reading(analogRead(ANALOG_SENSOR_INPUT_PIN));
-    }
-
-    // setup led strips
+    // // setup moving average
+    // piezoSensor.begin();
+    // for (int i = 0; i < 2000; i++)
+    // {
+    //     piezoSensor.reading(analogRead(ANALOG_SENSOR_INPUT_PIN));
+    // }
+    
     FastLED.setBrightness(255);
-    FastLED.addLeds<CHIPSET, DATA_PIN_2, COLOR_ORDER>(leds, 0, NUM_LEDS_STRIP_3M).setCorrection(TypicalLEDStrip);
-    FastLED.addLeds<CHIPSET, DATA_PIN_3, COLOR_ORDER>(leds, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_5M).setCorrection(TypicalLEDStrip);
+    FastLED.addLeds<NEOPIXEL, LED_RING_DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
 
-    // led_ring_controller = &FastLED.addLeds<CHIPSET, LED_RING_DATA_PIN, COLOR_ORDER>(leds, 0, NUM_LED_RING_PIXELS).setCorrection(TypicalLEDStrip);
+    FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
+    FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_3M);
+
+    
+    // tell FastLED there's 60 NEOPIXEL leds on pin 3, starting at index 60 in the led array
+    FastLED.addLeds<NEOPIXEL, DATA_PIN_3>(leds, led_strip_offset[2], NUM_LEDS_STRIP_5M);
+    // tell FastLED there's 60 NEOPIXEL leds on pin 3, starting at index 60 in the led array
+    FastLED.addLeds<NEOPIXEL, DATA_PIN_4>(leds, led_strip_offset[3], NUM_LEDS_STRIP_5M);
+    timer_comet = millis();    
     ring.begin(); // INITIALIZE NeoPixel strip object
-    ring.show();  // Turn OFF all pixels ASAP
-    ring.setBrightness(BRIGHTNESS_RING);
-    hit_timer = 0;
-    state = IDLE;
+    // ring.show();  // Turn OFF all pixels ASAP
+    // ring.setBrightness(BRIGHTNESS_RING);
+ 
 }
+
+    // void setup() {
+
+
+    // // // led_ring_controller = &FastLED.addLeds<CHIPSET, LED_RING_DATA_PIN, COLOR_ORDER>(leds, 0, NUM_LED_RING_PIXELS).setCorrection(TypicalLEDStrip);
+
+    // // hit_timer = 0;
+    // // state = IDLE;
+    // }
 
 void loop()
 {
-    // Sensor lezen
+    // // Sensor lezen
     rawValue = analogRead(27);
     Serial.println(rawValue);
 
-    if (rawValue > 500) // 500 is de threshold
-    {
-        // Gerben: ik gok dat dit het punt is waar de mol geraakt is dus hier een hit animatie
-        led_ring_animation_hit(random(255), random(255), random(255));
-        // Niet naar idle
-        idle_timer = millis();
-        // Animatie afspelen
-        state = ACTIVE;
+    // if (timer_comet + 1000 + random(5000) < millis()) // 500 is de threshold
+    // {
+    //     timer_comet = millis();
+    //     hue_comet[0] = random(256);
+    // }
+
+    if (rawValue > 500) { // 500 threshold
         hue_comet[0] = random(256);
     }
-    if (idle_delay < millis() - idle_timer) // delay staat nu op 1 minuut daarna gaat ie naar idle
-    {
-        idle_timer = millis();
-        state = IDLE;
-    }
     
-    
-
-    switch (state)
-    {
-    case IDLE:
-        idleRingAnimation(20, 60, true, 20, 0, random(0, 255), random(0, 255));
-        break;
-    case ACTIVE:
-        break;
-    }
-
-    dimLedring();
     comet_ledstrip();
     FastLED.show();
 }
