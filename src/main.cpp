@@ -2,9 +2,6 @@
 #include <FastLED.h>
 #include <Adafruit_NeoPixel.h>
 #include <Wire.h>
-#include <movingAvg.h>
-
-#define SWITCH_PIN 5 // TODO: Choose switch pin
 
 // Game variables
 #define MAX_COMETS 2 // ?
@@ -47,10 +44,6 @@ long long timer_comet;
 uint8_t sensors[NUM_SENSORS];   // Sensors
 int sensor_values[NUM_SENSORS]; // Values
 int sensor_adresses[NUM_SENSORS];
-movingAvg piezoSensor(10);
-
-// Timer to stabilize sensor input after its been hit
-unsigned long hit_timer;
 
 // Helemaal crazy
 CRGB leds[NUM_LEDS * 3] = {0};
@@ -109,7 +102,7 @@ void setup()
 
 void loop()
 {
-    // // Sensor lezen
+    // Sensor lezen
     rawValue = analogRead(ANALOG_SENSOR_INPUT_PIN);
     Serial.println(rawValue);
 
