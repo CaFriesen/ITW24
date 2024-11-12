@@ -7,7 +7,7 @@
 #define MAX_COMETS 2 // ?
 #define LED_SKIPS 3  // ?
 #define COMET_SIZE 20
-#define SENSOR_THRESHOLD 400
+// #define SENSOR_THRESHOLD 3000
 
 // LED beam config
 #define DATA_PIN 33
@@ -20,7 +20,7 @@
 #define NUM_LEDS NUM_LEDS_STRIP_3M * 2 + NUM_LEDS_STRIP_5M * 2
 #define NUM_STRIPS 4
 int led_strip_length[] = {NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_5M, NUM_LEDS_STRIP_5M};
-int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M * 2, NUM_LEDS_STRIP_3M * 2 + NUM_LEDS_STRIP_5M};
+int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M + NUM_LEDS_STRIP_5M, NUM_LEDS_STRIP_3M + NUM_LEDS_STRIP_5M*2};
 uint32_t led_strip_data_pins[] = {DATA_PIN, DATA_PIN_2, DATA_PIN_3, DATA_PIN_4};
 CLEDController *led_strip_controllers[NUM_STRIPS];
 
@@ -39,7 +39,7 @@ long long timer_comet;
 // Sensor config
 #define NUM_SENSORS 5
 #define ANALOG_SENSOR_INPUT_PIN 27
-#define THRESHOLD 1000
+#define THRESHOLD 1400
 
 uint8_t sensors[NUM_SENSORS];   // Sensors
 int sensor_values[NUM_SENSORS]; // Values
@@ -91,7 +91,7 @@ void setup()
     FastLED.addLeds<NEOPIXEL, LED_RING_DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
 
     FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
-    FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_3M);
+    FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_5M);
 
     // tell FastLED there's 60 NEOPIXEL leds on pin 3, starting at index 60 in the led array
     FastLED.addLeds<NEOPIXEL, DATA_PIN_3>(leds, led_strip_offset[2], NUM_LEDS_STRIP_5M);
