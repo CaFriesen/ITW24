@@ -236,9 +236,9 @@ void triggerLedstripAnimation()
 
 void randomTrigger()
 {
-    int min_interval = 60000;  // 1 minute
-    int max_interval = 600000; // 10 minutes
-    int interval = 0;          // Start interval = 0
+    int min_interval = 1000;  // 1 minute
+    int max_interval = 3000; // 10 minutes
+    int interval = 1000;          // Start interval = 0
 
     if (timer_comet + interval < millis())
     {
