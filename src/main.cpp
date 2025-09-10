@@ -9,9 +9,16 @@
 #define DATA_PIN_3 25
 #define DATA_PIN_4 23
 
+// LED ring config
+#define LED_RING_DATA_PIN 26
+#define NUM_LED_RING_PIXELS 60
+CLEDController *led_ring_controller;
+CRGB led_ring_array[3 * NUM_LED_RING_PIXELS];
+CRGB *led_ring_array_head;
+
 #define NUM_LEDS_STRIP_3M 180
 #define NUM_LEDS_STRIP_5M 300
-#define NUM_LEDS NUM_LEDS_STRIP_3M * 2 + NUM_LEDS_STRIP_5M * 2 // Incorrect with LED strips defined!!!
+#define NUM_LEDS NUM_LEDS_STRIP_3M * 2 + NUM_LEDS_STRIP_5M * 2
 #define NUM_STRIPS 4
 int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M + NUM_LEDS_STRIP_5M, NUM_LEDS_STRIP_3M + NUM_LEDS_STRIP_5M * 2};
 uint32_t led_strip_data_pins[] = {DATA_PIN, DATA_PIN_2, DATA_PIN_3, DATA_PIN_4};
@@ -19,13 +26,6 @@ CLEDController *led_strip_controllers[NUM_STRIPS];
 
 #define COLOR_ORDER GRB
 #define CHIPSET WS2812B
-
-// LED ring config
-#define LED_RING_DATA_PIN 26
-#define NUM_LED_RING_PIXELS 60
-CLEDController *led_ring_controller;
-CRGB led_ring_array[3 * NUM_LED_RING_PIXELS];
-CRGB *led_ring_array_head;
 
 long long timer_comet;
 unsigned long persist_stop = 20000;
@@ -38,11 +38,10 @@ unsigned long persist_stop = 20000;
 // Helemaal crazy
 #define LED_SKIPS 3
 #define COMET_SIZE 20
+// CRGB leds[NUM_LEDS] = {0};
 CRGB leds[NUM_LEDS * 3] = {0};
 CHSV HSV_leds[NUM_LEDS * 3] = {CHSV(0, 0, 0)};
 int hue_comet[NUM_LEDS * 3] = {0};
-int value_comet[COMET_SIZE] = {0};
-CRGB *led_head = &leds[0];
 uint32_t virtual_beam_size = NUM_LEDS + COMET_SIZE + 1;
 
 // Starting LED of comet (remains on for time interval)
@@ -114,7 +113,7 @@ void updateImplode()
 
     if (elapsed < flash_duration)
     {
-        leds[implode_index] = CHSV(255, 255, 255); // bright flash
+        leds[implode_index] = CRGB::White; // bright flash
     }
     else if (elapsed < flash_duration + flicker_duration)
     {
@@ -148,36 +147,115 @@ void doubleHitAnimation()
     }
 }
 
-void comet_ledstrip()
-{
-    for (int32_t i = virtual_beam_size; i >= 0; i--)
-    {
-        if (hue_comet[i] != 0)
-        {
-            int current_hue_comet = hue_comet[i];
-            hue_comet[i + LED_SKIPS] = current_hue_comet;
-            hue_comet[i] = 0;
+// ----------------- Comet manager (non-blocking, mirrored comets) -----------------
+#define MAX_COMETS 12
+const unsigned long COMET_MOVE_INTERVAL_MS = 20; // <- smaller = faster animation (was 40). Tweak this.
+unsigned long cometMoveInterval = COMET_MOVE_INTERVAL_MS; // ms between steps
 
-            for (int j = i; (j > i - COMET_SIZE) && (j >= 0); j--)
-            {
-                leds[j] = CHSV(current_hue_comet, min(COMET_SIZE - ((i - j) * 12) - (int)random(50), 50), max(200 - (int)random(40), 0));
-            }
+// Color strength constants (tweak for more or less vivid colors)
+const int BASE_SAT = 220; // base saturation (higher -> more color, 0 = grayscale)
+const int SAT_DECAY_PER_STEP = 10;
+const int BASE_BRI = 255; // base brightness
+const int BRI_DECAY_PER_STEP = 18;
 
-            // TODO: Comet down the ledstrip from start led (not only up)
+struct Comet {
+  int head;            // current head index (physical LED index)
+  int startPos;        // original start index (used for deterministic tail noise)
+  int dir;             // +1 = moving toward larger indices, -1 = toward 0
+  uint8_t hue;         // hue
+  bool active;         // active flag
+  unsigned long lastMove; // last move time
+};
 
-            if (i - COMET_SIZE >= 0)
-            {
-                for (int j = 0; j < LED_SKIPS; j++)
-                {
-                    if (!persistent_led[j]) // TODO: Check if correct led is now targeted
-                    {
-                        leds[i - COMET_SIZE - j] = CRGB::Black;
-                    }
-                }
-            }
-        }
-    }
+Comet comets[MAX_COMETS];
+
+// Initialize comet pool
+void initComets() {
+  for (int i = 0; i < MAX_COMETS; i++) {
+    comets[i].active = false;
+  }
 }
+
+// Start two symmetric comets from startIndex with same hue (one left, one right)
+void startDualComet(int startIndex, uint8_t hue) {
+  // find up to two free slots and start them with dir -1 and +1
+  int started = 0;
+  for (int dir = -1; dir <= 1 && started < 2; dir += 2) {
+    for (int s = 0; s < MAX_COMETS; s++) {
+      if (!comets[s].active) {
+        comets[s].active = true;
+        comets[s].head = startIndex;
+        comets[s].startPos = startIndex;
+        comets[s].dir = dir;
+        comets[s].hue = hue;
+        comets[s].lastMove = millis();
+        started++;
+        break;
+      }
+    }
+  }
+}
+
+// Deterministic tiny "noise" to keep mirrored tails identical
+static inline uint8_t comet_noise(uint8_t hue, int startPos, int k) {
+  // cheap hash -> deterministic across both comets started from same startPos
+  uint32_t v = ((uint32_t)hue * 47u) + ((uint32_t)startPos * 13u) + ((uint32_t)k * 29u);
+  // mix bits a bit:
+  v ^= (v >> 8);
+  v *= 199873u;
+  return (uint8_t)(v & 0xFF); // 0..255
+}
+
+// Call this each loop to update & draw active comets
+void updateComets() {
+  unsigned long now = millis();
+
+  // Clear non-persistent LED layer so comet pixels do not accumulate.
+  // Persistent LEDs get redrawn by updatePersistentLeds() after this.
+  for (int i = 0; i < NUM_LEDS; i++) {
+    if (!persistent_led[i]) leds[i] = CRGB::Black;
+  }
+
+  for (int c = 0; c < MAX_COMETS; c++) {
+    if (!comets[c].active) continue;
+
+    // Move the comet head when interval elapsed
+    if (now - comets[c].lastMove >= cometMoveInterval) {
+      comets[c].lastMove = now;
+      comets[c].head += comets[c].dir * LED_SKIPS;
+
+      // Deactivate when head leaves physical LED range
+      if (comets[c].head < 0 || comets[c].head >= NUM_LEDS) {
+        comets[c].active = false;
+        continue;
+      }
+    }
+
+    // Draw the tail *behind* the head. Use formula: pos = head - dir * k
+    // That makes the tail lie opposite the direction of motion.
+    for (int k = 0; k < COMET_SIZE; k++) {
+      int pos = comets[c].head - comets[c].dir * k;
+      if (pos < 0 || pos >= NUM_LEDS) continue;
+      if (persistent_led[pos]) continue; // don't overwrite persistent pixels
+
+      // deterministic "noise" so both comets look symmetric
+      uint8_t noise = comet_noise(comets[c].hue, comets[c].startPos, k);
+
+      // Saturation: start high, decay with k, small noise
+      int sat = BASE_SAT - k * SAT_DECAY_PER_STEP - (noise & 0x1F);
+      if (sat < 20) sat = 20;    // ensure at least a little color
+      if (sat > 255) sat = 255;
+
+      // Brightness: start high, decay with k, influenced by noise
+      int bri = BASE_BRI - k * BRI_DECAY_PER_STEP - (noise & 0x3F);
+      if (bri < 0) bri = 0;
+      if (bri > 255) bri = 255;
+
+      leds[pos] = CHSV(comets[c].hue, (uint8_t)sat, (uint8_t)bri);
+    }
+  }
+}
+// -------------------------------------------------------------------------------
 
 int randomStartLed()
 {
@@ -201,7 +279,8 @@ void updatePersistentLeds()
         if (persistent_led[i]) // If persistent
         {
             // Keep LED on
-            leds[i] = CHSV(hue_comet[i] == 0 ? 100 : hue_comet[i], 255, 255);
+            // (left as original logic; you can change to CHSV for more consistent color behavior)
+            leds[i] = CRGB(hue_comet[i] == 0 ? 100 : hue_comet[i], 255, 255);
 
             // Timeout check
             if (now - persistent_start[i] > persist_stop) // If on for interval time
@@ -220,7 +299,8 @@ void triggerLedstripAnimation()
 
     if (value > THRESHOLD) // Choose custom threshold per ESP!!!!
     {
-        hue_comet[randomStartLed()] = random(256); // Trigger comet
+        // START MIRRORED COLORED COMETS
+        startDualComet(randomStartLed(), random(256)); // random hue
         timer_comet = millis();                    // Reset idle timer
         double_drum_hit++;
         double_timer = millis(); // Start double interval
@@ -228,7 +308,7 @@ void triggerLedstripAnimation()
 
     if (rs485ReadInt() == 1) // Trigger from double hit
     {
-        hue_comet[randomStartLed()] = random(256); // Trigger comet
+        startDualComet(randomStartLed(), random(256)); // Trigger comet with color
         timer_comet = millis();                    // Reset idle timer
         double_drum_hit = 0;
     }
@@ -236,14 +316,14 @@ void triggerLedstripAnimation()
 
 void randomTrigger()
 {
-    int min_interval = 1000;  // 1 minute
-    int max_interval = 3000; // 10 minutes
-    int interval = 1000;          // Start interval = 0
+    int min_interval = 5000;  // 1 minute
+    int max_interval = 10000; // 10 minutes
+    int interval = 5000;          // Start interval = 0
 
     if (timer_comet + interval < millis())
     {
-        interval = random(min_interval, max_interval); // Calculate new random interval in range
-        hue_comet[randomStartLed()] = random(256);     // Trigger comet
+        // interval = random(min_interval, max_interval); // Calculate new random interval in range
+        startDualComet(randomStartLed(), random(256));     // Trigger comet with random color
         timer_comet = millis();                        // Reset timer
     }
 }
@@ -259,23 +339,28 @@ void setup()
 
     FastLED.setBrightness(255);
     // Ring is part of LED strip
-    FastLED.addLeds<NEOPIXEL, LED_RING_DATA_PIN>(leds, 0, NUM_LED_RING_PIXELS);
+    // FastLED.addLeds<NEOPIXEL, LED_RING_DATA_PIN>(leds, 0, NUM_LED_RING_PIXELS);
 
     FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
-    FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_5M);
+    FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_3M);
 
     FastLED.addLeds<NEOPIXEL, DATA_PIN_3>(leds, led_strip_offset[2], NUM_LEDS_STRIP_5M);
     FastLED.addLeds<NEOPIXEL, DATA_PIN_4>(leds, led_strip_offset[3], NUM_LEDS_STRIP_5M);
+
+    initComets();            // initialize comet pool
     timer_comet = millis();
 }
 
 void loop()
 {
-    triggerLedstripAnimation();
+    // triggerLedstripAnimation();
     randomTrigger();
-    comet_ledstrip();
+
+    // NEW: updateComets (non-blocking, draws both directions)
+    updateComets();
+
     updatePersistentLeds();
     updateImplode();
-    doubleHitAnimation();
+    // doubleHitAnimation();
     FastLED.show();
 }
