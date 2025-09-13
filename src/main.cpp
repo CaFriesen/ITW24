@@ -13,7 +13,7 @@
 #define LED_RING_DATA_PIN 26
 #define NUM_LED_RING_PIXELS 60
 CLEDController *led_ring_controller;
-CRGB led_ring_array[3 * NUM_LED_RING_PIXELS];
+CRGB led_ring_array[NUM_LED_RING_PIXELS];
 CRGB *led_ring_array_head;
 
 #define NUM_LEDS_STRIP_3M 180
@@ -56,6 +56,11 @@ int double_drum_hit = 0;
 unsigned long double_timer = 0;
 unsigned long double_interval = 100; // Window to register double drum hit
 
+unsigned long led_ring_timer = 0;
+unsigned long led_ring_delay = 200; // ms
+
+int prev_value;
+
 // RS458 config
 #define RS485_TX_PIN 17 // connect to MAX485 DI
 #define RS485_RX_PIN 16 // connect to MAX485 RO
@@ -66,90 +71,112 @@ HardwareSerial RS485Serial(1); // use UART1
 // Enable transmit mode
 void rs485Transmit()
 {
-    digitalWrite(RS485_DE_RE, HIGH);
+  digitalWrite(RS485_DE_RE, HIGH);
 }
 
 // Enable receive mode
 void rs485Receive()
 {
-    digitalWrite(RS485_DE_RE, LOW);
+  digitalWrite(RS485_DE_RE, LOW);
 }
 
 // Send an integer
 void rs485SendInt(int value)
 {
-    rs485Transmit();
-    RS485Serial.println(value); // send as text + newline
-    RS485Serial.flush();
-    rs485Receive();
+  rs485Transmit();
+  RS485Serial.println(value); // send as text + newline
+  RS485Serial.flush();
+  rs485Receive();
 }
 
 // Read an integer
 int rs485ReadInt()
 {
-    if (RS485Serial.available())
-    {
-        return RS485Serial.parseInt(); // waits until it gets a number (non-blocking if no digits available)
-    }
-    return -1; // no data
+  if (RS485Serial.available())
+  {
+    return RS485Serial.parseInt(); // waits until it gets a number (non-blocking if no digits available)
+  }
+  return -1; // no data
+}
+
+void ledRingFlash()
+{
+  int r = random(0, 255);
+  int g = random(0, 255);
+  int b = random(0, 255);
+  for (int i = 0; i < NUM_LED_RING_PIXELS; i++)
+  {
+    led_ring_array[i] = CRGB(r, g, b); // flash
+  }
+}
+
+void ledRingOff()
+{
+  if (led_ring_timer + led_ring_delay > millis())
+    return;
+  led_ring_timer = millis();
+  for (int i = 0; i < NUM_LED_RING_PIXELS; i++)
+  {
+    led_ring_array[i] = CRGB::Black; // off
+  }
 }
 
 void startImplode(int i)
 {
-    implode_active = true;
-    implode_index = i;
-    implode_start = millis();
+  implode_active = true;
+  implode_index = i;
+  implode_start = millis();
 }
 
 void updateImplode()
 {
-    if (!implode_active)
-        return;
+  if (!implode_active)
+    return;
 
-    uint32_t now = millis();
-    uint32_t elapsed = now - implode_start;
-    int flash_duration = 100;
-    int flicker_duration = 400;
+  uint32_t now = millis();
+  uint32_t elapsed = now - implode_start;
+  int flash_duration = 100;
+  int flicker_duration = 400;
 
-    if (elapsed < flash_duration)
-    {
-        leds[implode_index] = CRGB::White; // bright flash
-    }
-    else if (elapsed < flash_duration + flicker_duration)
-    {
-        uint8_t progress = map(elapsed - flash_duration, 0, flicker_duration, 255, 0);
-        uint8_t flicker = random8(20);
-        leds[implode_index] = CHSV(255, 200, max<int>(0, progress - flicker));
-    }
-    else
-    {
-        leds[implode_index] = CRGB::Black; // off
-        implode_active = false;
-    }
+  if (elapsed < flash_duration)
+  {
+    leds[implode_index] = CRGB::White; // bright flash
+  }
+  else if (elapsed < flash_duration + flicker_duration)
+  {
+    uint8_t progress = map(elapsed - flash_duration, 0, flicker_duration, 255, 0);
+    uint8_t flicker = random8(20);
+    leds[implode_index] = CHSV(255, 200, max<int>(0, progress - flicker));
+  }
+  else
+  {
+    leds[implode_index] = CRGB::Black; // off
+    implode_active = false;
+  }
 }
 
 void doubleHitAnimation()
 {
-    if (double_timer + millis() > double_interval) // If double interval exceeded
-    {
-        double_drum_hit = 0; // Reset double hit counter
-        return;
-    }
+  if (double_timer + millis() > double_interval) // If double interval exceeded
+  {
+    double_drum_hit = 0; // Reset double hit counter
+    return;
+  }
 
-    if (double_drum_hit < 2) // If no double hit registered
-        return;
+  if (double_drum_hit < 2) // If no double hit registered
+    return;
 
-    // Send 3 animation triggers to all drums over rs458
-    for (int i = 0; i < 2; i++)
-    {
-        rs485SendInt(1);
-        delay(10);
-    }
+  // Send 3 animation triggers to all drums over rs458
+  for (int i = 0; i < 2; i++)
+  {
+    rs485SendInt(1);
+    delay(10);
+  }
 }
 
 // ----------------- Comet manager (non-blocking, mirrored comets) -----------------
 #define MAX_COMETS 12
-const unsigned long COMET_MOVE_INTERVAL_MS = 20; // <- smaller = faster animation (was 40). Tweak this.
+const unsigned long COMET_MOVE_INTERVAL_MS = 20;          // <- smaller = faster animation (was 40). Tweak this.
 unsigned long cometMoveInterval = COMET_MOVE_INTERVAL_MS; // ms between steps
 
 // Color strength constants (tweak for more or less vivid colors)
@@ -158,31 +185,38 @@ const int SAT_DECAY_PER_STEP = 10;
 const int BASE_BRI = 255; // base brightness
 const int BRI_DECAY_PER_STEP = 18;
 
-struct Comet {
-  int head;            // current head index (physical LED index)
-  int startPos;        // original start index (used for deterministic tail noise)
-  int dir;             // +1 = moving toward larger indices, -1 = toward 0
-  uint8_t hue;         // hue
-  bool active;         // active flag
+struct Comet
+{
+  int head;               // current head index (physical LED index)
+  int startPos;           // original start index (used for deterministic tail noise)
+  int dir;                // +1 = moving toward larger indices, -1 = toward 0
+  uint8_t hue;            // hue
+  bool active;            // active flag
   unsigned long lastMove; // last move time
 };
 
 Comet comets[MAX_COMETS];
 
 // Initialize comet pool
-void initComets() {
-  for (int i = 0; i < MAX_COMETS; i++) {
+void initComets()
+{
+  for (int i = 0; i < MAX_COMETS; i++)
+  {
     comets[i].active = false;
   }
 }
 
 // Start two symmetric comets from startIndex with same hue (one left, one right)
-void startDualComet(int startIndex, uint8_t hue) {
+void startDualComet(int startIndex, uint8_t hue)
+{
   // find up to two free slots and start them with dir -1 and +1
   int started = 0;
-  for (int dir = -1; dir <= 1 && started < 2; dir += 2) {
-    for (int s = 0; s < MAX_COMETS; s++) {
-      if (!comets[s].active) {
+  for (int dir = -1; dir <= 1 && started < 2; dir += 2)
+  {
+    for (int s = 0; s < MAX_COMETS; s++)
+    {
+      if (!comets[s].active)
+      {
         comets[s].active = true;
         comets[s].head = startIndex;
         comets[s].startPos = startIndex;
@@ -197,7 +231,8 @@ void startDualComet(int startIndex, uint8_t hue) {
 }
 
 // Deterministic tiny "noise" to keep mirrored tails identical
-static inline uint8_t comet_noise(uint8_t hue, int startPos, int k) {
+static inline uint8_t comet_noise(uint8_t hue, int startPos, int k)
+{
   // cheap hash -> deterministic across both comets started from same startPos
   uint32_t v = ((uint32_t)hue * 47u) + ((uint32_t)startPos * 13u) + ((uint32_t)k * 29u);
   // mix bits a bit:
@@ -207,25 +242,32 @@ static inline uint8_t comet_noise(uint8_t hue, int startPos, int k) {
 }
 
 // Call this each loop to update & draw active comets
-void updateComets() {
+void updateComets()
+{
   unsigned long now = millis();
 
   // Clear non-persistent LED layer so comet pixels do not accumulate.
   // Persistent LEDs get redrawn by updatePersistentLeds() after this.
-  for (int i = 0; i < NUM_LEDS; i++) {
-    if (!persistent_led[i]) leds[i] = CRGB::Black;
+  for (int i = 0; i < NUM_LEDS; i++)
+  {
+    if (!persistent_led[i])
+      leds[i] = CRGB::Black;
   }
 
-  for (int c = 0; c < MAX_COMETS; c++) {
-    if (!comets[c].active) continue;
+  for (int c = 0; c < MAX_COMETS; c++)
+  {
+    if (!comets[c].active)
+      continue;
 
     // Move the comet head when interval elapsed
-    if (now - comets[c].lastMove >= cometMoveInterval) {
+    if (now - comets[c].lastMove >= cometMoveInterval)
+    {
       comets[c].lastMove = now;
       comets[c].head += comets[c].dir * LED_SKIPS;
 
       // Deactivate when head leaves physical LED range
-      if (comets[c].head < 0 || comets[c].head >= NUM_LEDS) {
+      if (comets[c].head < 0 || comets[c].head >= NUM_LEDS)
+      {
         comets[c].active = false;
         continue;
       }
@@ -233,23 +275,30 @@ void updateComets() {
 
     // Draw the tail *behind* the head. Use formula: pos = head - dir * k
     // That makes the tail lie opposite the direction of motion.
-    for (int k = 0; k < COMET_SIZE; k++) {
+    for (int k = 0; k < COMET_SIZE; k++)
+    {
       int pos = comets[c].head - comets[c].dir * k;
-      if (pos < 0 || pos >= NUM_LEDS) continue;
-      if (persistent_led[pos]) continue; // don't overwrite persistent pixels
+      if (pos < 0 || pos >= NUM_LEDS)
+        continue;
+      if (persistent_led[pos])
+        continue; // don't overwrite persistent pixels
 
       // deterministic "noise" so both comets look symmetric
       uint8_t noise = comet_noise(comets[c].hue, comets[c].startPos, k);
 
       // Saturation: start high, decay with k, small noise
       int sat = BASE_SAT - k * SAT_DECAY_PER_STEP - (noise & 0x1F);
-      if (sat < 20) sat = 20;    // ensure at least a little color
-      if (sat > 255) sat = 255;
+      if (sat < 20)
+        sat = 20; // ensure at least a little color
+      if (sat > 255)
+        sat = 255;
 
       // Brightness: start high, decay with k, influenced by noise
       int bri = BASE_BRI - k * BRI_DECAY_PER_STEP - (noise & 0x3F);
-      if (bri < 0) bri = 0;
-      if (bri > 255) bri = 255;
+      if (bri < 0)
+        bri = 0;
+      if (bri > 255)
+        bri = 255;
 
       leds[pos] = CHSV(comets[c].hue, (uint8_t)sat, (uint8_t)bri);
     }
@@ -259,108 +308,112 @@ void updateComets() {
 
 int randomStartLed()
 {
-    int start = random(0, NUM_LEDS);
-    int attempts = 0;
-    while (persistent_led[start] && attempts < NUM_LEDS) // If led is already on
-    {
-        start = random(0, NUM_LEDS); // Continue searching
-        attempts++;
-    }
-    persistent_led[start] = true;       // Set persistent status
-    persistent_start[start] = millis(); // Set timestamp
-    return start;
+  int start = random(0, NUM_LEDS);
+  int attempts = 0;
+  while (persistent_led[start] && attempts < NUM_LEDS) // If led is already on
+  {
+    start = random(0, NUM_LEDS); // Continue searching
+    attempts++;
+  }
+  persistent_led[start] = true;       // Set persistent status
+  persistent_start[start] = millis(); // Set timestamp
+  return start;
 }
 
 void updatePersistentLeds()
 {
-    uint32_t now = millis();
-    for (int i = 0; i < NUM_LEDS; i++) // For all leds
+  uint32_t now = millis();
+  for (int i = 0; i < NUM_LEDS; i++) // For all leds
+  {
+    if (persistent_led[i]) // If persistent
     {
-        if (persistent_led[i]) // If persistent
-        {
-            // Keep LED on
-            // (left as original logic; you can change to CHSV for more consistent color behavior)
-            leds[i] = CRGB(hue_comet[i] == 0 ? 100 : hue_comet[i], 255, 255);
+      // Keep LED on
+      // (left as original logic; you can change to CHSV for more consistent color behavior)
+      leds[i] = CRGB(hue_comet[i] == 0 ? 100 : hue_comet[i], 255, 255);
 
-            // Timeout check
-            if (now - persistent_start[i] > persist_stop) // If on for interval time
-            {
-                persistent_led[i] = false; // Remove persistent status
-                startImplode(i);           // Implode LED
-            }
-        }
+      // Timeout check
+      if (now - persistent_start[i] > persist_stop) // If on for interval time
+      {
+        persistent_led[i] = false; // Remove persistent status
+        startImplode(i);           // Implode LED
+      }
     }
+  }
 }
 
 void triggerLedstripAnimation()
 {
-    int value = analogRead(ANALOG_SENSOR_INPUT_PIN);
-    Serial.println(value);
+  int value = digitalRead(ANALOG_SENSOR_INPUT_PIN);
+  Serial.println(value);
 
-    if (value > THRESHOLD) // Choose custom threshold per ESP!!!!
-    {
-        // START MIRRORED COLORED COMETS
-        startDualComet(randomStartLed(), random(256)); // random hue
-        timer_comet = millis();                    // Reset idle timer
-        double_drum_hit++;
-        double_timer = millis(); // Start double interval
-    }
+  if (value > 0 && value != prev_value) // Choose custom threshold per ESP!!!!
+  {
+    prev_value = value;
+    // START MIRRORED COLORED COMETS
+    ledRingFlash();
+    startDualComet(randomStartLed(), random(256)); // random hue
+    timer_comet = millis();                        // Reset idle timer
+    double_drum_hit++;
+    double_timer = millis(); // Start double interval
+  }
 
-    if (rs485ReadInt() == 1) // Trigger from double hit
-    {
-        startDualComet(randomStartLed(), random(256)); // Trigger comet with color
-        timer_comet = millis();                    // Reset idle timer
-        double_drum_hit = 0;
-    }
+  if (rs485ReadInt() == 1) // Trigger from double hit
+  {
+    startDualComet(randomStartLed(), random(256)); // Trigger comet with color
+    timer_comet = millis();                        // Reset idle timer
+    double_drum_hit = 0;
+  }
 }
 
 void randomTrigger()
 {
-    int min_interval = 5000;  // 1 minute
-    int max_interval = 10000; // 10 minutes
-    int interval = 5000;          // Start interval = 0
+  int min_interval = 5000;  // 1 minute
+  int max_interval = 10000; // 10 minutes
+  int interval = 5000;      // Start interval = 0
 
-    if (timer_comet + interval < millis())
-    {
-        // interval = random(min_interval, max_interval); // Calculate new random interval in range
-        startDualComet(randomStartLed(), random(256));     // Trigger comet with random color
-        timer_comet = millis();                        // Reset timer
-    }
+  if (timer_comet + interval < millis())
+  {
+    ledRingFlash();
+    // interval = random(min_interval, max_interval); // Calculate new random interval in range
+    startDualComet(randomStartLed(), random(256)); // Trigger comet with random color
+    timer_comet = millis();                        // Reset timer
+  }
 }
 
 void setup()
 {
-    pinMode(RS485_DE_RE, OUTPUT);
-    rs485Receive(); // default to listen mode
+  pinMode(RS485_DE_RE, OUTPUT);
+  rs485Receive(); // default to listen mode
 
-    RS485Serial.begin(9600, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
-    Serial.begin(115200);
-    Serial.println("SYSTEM BOOTED");
+  RS485Serial.begin(9600, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+  Serial.begin(115200);
+  Serial.println("SYSTEM BOOTED");
 
-    FastLED.setBrightness(255);
-    // Ring is part of LED strip
-    // FastLED.addLeds<NEOPIXEL, LED_RING_DATA_PIN>(leds, 0, NUM_LED_RING_PIXELS);
+  FastLED.setBrightness(255);
+  // Ring is part of LED strip
+  FastLED.addLeds<NEOPIXEL, LED_RING_DATA_PIN>(led_ring_array, 0, NUM_LED_RING_PIXELS);
 
-    FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
-    FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_3M);
+  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
+  FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_3M);
 
-    FastLED.addLeds<NEOPIXEL, DATA_PIN_3>(leds, led_strip_offset[2], NUM_LEDS_STRIP_5M);
-    FastLED.addLeds<NEOPIXEL, DATA_PIN_4>(leds, led_strip_offset[3], NUM_LEDS_STRIP_5M);
+  FastLED.addLeds<NEOPIXEL, DATA_PIN_3>(leds, led_strip_offset[2], NUM_LEDS_STRIP_5M);
+  FastLED.addLeds<NEOPIXEL, DATA_PIN_4>(leds, led_strip_offset[3], NUM_LEDS_STRIP_5M);
 
-    initComets();            // initialize comet pool
-    timer_comet = millis();
+  initComets(); // initialize comet pool
+  timer_comet = millis();
 }
 
 void loop()
 {
-    // triggerLedstripAnimation();
-    randomTrigger();
+  triggerLedstripAnimation();
+  randomTrigger();
 
-    // NEW: updateComets (non-blocking, draws both directions)
-    updateComets();
+  // NEW: updateComets (non-blocking, draws both directions)
+  updateComets();
 
-    updatePersistentLeds();
-    updateImplode();
-    // doubleHitAnimation();
-    FastLED.show();
+  updatePersistentLeds();
+  updateImplode();
+  ledRingOff();
+  // doubleHitAnimation();
+  FastLED.show();
 }
