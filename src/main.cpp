@@ -28,7 +28,10 @@ CLEDController *led_strip_controllers[NUM_STRIPS];
 #define CHIPSET WS2812B
 
 long long timer_comet;
-unsigned long persist_stop = 20000;
+long long debounceTimer;
+unsigned long persist_stop = 30000;
+
+int interval = 5000; // Start interval = 5 seconds
 
 // Sensor config
 #define NUM_DRUMS 5
@@ -60,6 +63,8 @@ unsigned long led_ring_timer = 0;
 unsigned long led_ring_delay = 200; // ms
 
 int prev_value;
+
+bool idle = false;
 
 // RS458 config
 #define RS485_TX_PIN 17 // connect to MAX485 DI
@@ -344,18 +349,33 @@ void updatePersistentLeds()
 void triggerLedstripAnimation()
 {
   int value = digitalRead(ANALOG_SENSOR_INPUT_PIN);
-  Serial.println(value);
 
-  if (value > 0 && value != prev_value) // Choose custom threshold per ESP!!!!
+  // if (value > 0 && value != prev_value && debounceTimer + 20 > millis()) // If hit detected and different from previous value
+  if (debounceTimer + 500 < millis() && value > 0) // If hit detected and different from previous value
   {
-    prev_value = value;
+    debounceTimer = millis();
+    if (idle) // If idle, reset all persistent leds
+    {
+      for (int i = 0; i < NUM_LEDS; i++)
+      {
+        persistent_led[i] = false;
+        startImplode(i); // Implode LED
+      }
+      idle = false;
+    }
+    Serial.println(value);
+
+    // digitalWrite(LED_BUILTIN, HIGH); // turn the LED on (HIGH is the voltage level
+    // prev_value = value;
+
     // START MIRRORED COLORED COMETS
     ledRingFlash();
     startDualComet(randomStartLed(), random(256)); // random hue
     timer_comet = millis();                        // Reset idle timer
-    double_drum_hit++;
-    double_timer = millis(); // Start double interval
+    // double_drum_hit++;
+    // double_timer = millis(); // Start double interval
   }
+  // digitalWrite(LED_BUILTIN, LOW); // turn the LED off by making the voltage LOW
 
   if (rs485ReadInt() == 1) // Trigger from double hit
   {
@@ -367,14 +387,14 @@ void triggerLedstripAnimation()
 
 void randomTrigger()
 {
-  int min_interval = 5000;  // 1 minute
-  int max_interval = 10000; // 10 minutes
-  int interval = 5000;      // Start interval = 0
+  int min_interval = 60000;  // 1 minute
+  int max_interval = 300000; // 5 minutes
 
   if (timer_comet + interval < millis())
   {
+    idle = true;
     ledRingFlash();
-    // interval = random(min_interval, max_interval); // Calculate new random interval in range
+    interval = random(min_interval, max_interval); // Calculate new random interval in range
     startDualComet(randomStartLed(), random(256)); // Trigger comet with random color
     timer_comet = millis();                        // Reset timer
   }
@@ -401,6 +421,7 @@ void setup()
 
   initComets(); // initialize comet pool
   timer_comet = millis();
+  debounceTimer = 0;
 }
 
 void loop()
