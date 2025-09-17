@@ -18,7 +18,7 @@ CRGB *led_ring_array_head;
 
 #define NUM_LEDS_STRIP_3M 180
 #define NUM_LEDS_STRIP_5M 300
-#define NUM_LEDS NUM_LEDS_STRIP_3M * 2 + NUM_LEDS_STRIP_5M * 2
+#define NUM_LEDS NUM_LEDS_STRIP_3M * 1 + NUM_LEDS_STRIP_5M * 2
 #define NUM_STRIPS 4
 int led_strip_offset[] = {0, NUM_LEDS_STRIP_3M, NUM_LEDS_STRIP_3M + NUM_LEDS_STRIP_5M, NUM_LEDS_STRIP_3M + NUM_LEDS_STRIP_5M * 2};
 uint32_t led_strip_data_pins[] = {DATA_PIN, DATA_PIN_2, DATA_PIN_3, DATA_PIN_4};
@@ -414,10 +414,10 @@ void setup()
   FastLED.addLeds<NEOPIXEL, LED_RING_DATA_PIN>(led_ring_array, 0, NUM_LED_RING_PIXELS);
 
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, 0, NUM_LEDS_STRIP_3M);
-  FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_3M);
+  FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds, led_strip_offset[1], NUM_LEDS_STRIP_5M);
 
   FastLED.addLeds<NEOPIXEL, DATA_PIN_3>(leds, led_strip_offset[2], NUM_LEDS_STRIP_5M);
-  FastLED.addLeds<NEOPIXEL, DATA_PIN_4>(leds, led_strip_offset[3], NUM_LEDS_STRIP_5M);
+  // FastLED.addLeds<NEOPIXEL, DATA_PIN_4>(leds, led_strip_offset[3], NUM_LEDS_STRIP_5M);
 
   initComets(); // initialize comet pool
   timer_comet = millis();
